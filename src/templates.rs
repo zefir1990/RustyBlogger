@@ -277,6 +277,61 @@ time { font-variant-numeric: tabular-nums; }
   color: #bae6fd;
 }
 .post-body pre code { background: transparent; padding: 0; font-size: inherit; color: inherit; }
+.post-body .code-block { position: relative; margin: 1rem 0; }
+.post-body .code-block pre { margin: 0; padding-top: 3rem; }
+.code-block-header {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.5rem 0.7rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 14px 14px 0 0;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.045), rgba(255, 255, 255, 0.015));
+}
+.code-block-label {
+  color: var(--muted);
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.copy-code {
+  flex: 0 0 auto;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 999px;
+  padding: 0.28rem 0.7rem;
+  background: rgba(15, 18, 27, 0.82);
+  color: var(--muted);
+  font: inherit;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  cursor: pointer;
+  backdrop-filter: blur(10px);
+  transition: color 160ms ease, border-color 160ms ease, background 160ms ease;
+}
+.copy-code:hover, .copy-code:focus-visible {
+  color: var(--text);
+  border-color: rgba(125, 211, 252, 0.45);
+  background: rgba(125, 211, 252, 0.14);
+  outline: none;
+}
+.copy-code.copied {
+  color: #86efac;
+  border-color: rgba(134, 239, 172, 0.45);
+  background: rgba(134, 239, 172, 0.12);
+}
+.copy-code.failed {
+  color: #fca5a5;
+  border-color: rgba(252, 165, 165, 0.45);
+  background: rgba(252, 165, 165, 0.12);
+}
 .post-body .post-link { margin: 0.5rem 0; }
 .post-card .post-body { margin-top: 1.1rem; }
 .permalink {
@@ -388,6 +443,81 @@ footer a:hover { color: var(--accent); }
   .post-card .card-title { font-size: clamp(1.4rem, 7vw, 2rem); }
   .gdpr-warning { width: calc(100% - 1.2rem); }
 }
+"#;
+
+const COPY_CODE_SCRIPT_TEMPLATE: &str = r#"
+(function () {
+  var copyLabel = "__COPY_LABEL__";
+  var copiedLabel = "__COPIED_LABEL__";
+  var failedLabel = "__FAILED_LABEL__";
+  var ariaLabel = "__ARIA_LABEL__";
+  var exampleLabel = "__EXAMPLE_LABEL__";
+  function mark(button, label, state) {
+    button.textContent = label;
+    button.classList.remove("copied", "failed");
+    button.classList.add(state);
+    window.clearTimeout(button.resetTimer);
+    button.resetTimer = window.setTimeout(function () {
+      button.textContent = copyLabel;
+      button.classList.remove("copied", "failed");
+    }, 1800);
+  }
+  function copyWithFallback(text, button) {
+    var textarea = document.createElement("textarea");
+    textarea.value = text;
+    textarea.setAttribute("readonly", "");
+    textarea.style.position = "fixed";
+    textarea.style.opacity = "0";
+    document.body.appendChild(textarea);
+    textarea.select();
+    var copied = false;
+    try {
+      copied = document.execCommand("copy");
+    } catch (error) {
+      copied = false;
+    }
+    document.body.removeChild(textarea);
+    mark(button, copied ? copiedLabel : failedLabel, copied ? "copied" : "failed");
+  }
+  function copyText(text, button) {
+    if (navigator.clipboard && window.isSecureContext) {
+      navigator.clipboard.writeText(text).then(function () {
+        mark(button, copiedLabel, "copied");
+      }, function () {
+        copyWithFallback(text, button);
+      });
+    } else {
+      copyWithFallback(text, button);
+    }
+  }
+  Array.prototype.forEach.call(document.querySelectorAll(".post-body pre"), function (pre) {
+    var code = pre.querySelector("code");
+    if (!code || (pre.parentElement && pre.parentElement.classList.contains("code-block"))) {
+      return;
+    }
+    var wrapper = document.createElement("div");
+    wrapper.className = "code-block";
+    pre.parentNode.insertBefore(wrapper, pre);
+    wrapper.appendChild(pre);
+    var header = document.createElement("div");
+    header.className = "code-block-header";
+    var label = document.createElement("span");
+    label.className = "code-block-label";
+    label.textContent = exampleLabel;
+    var button = document.createElement("button");
+    button.type = "button";
+    button.className = "copy-code";
+    button.textContent = copyLabel;
+    button.setAttribute("aria-label", ariaLabel);
+    button.title = ariaLabel;
+    button.addEventListener("click", function () {
+      copyText(code.textContent, button);
+    });
+    header.appendChild(label);
+    header.appendChild(button);
+    wrapper.appendChild(header);
+  });
+})();
 "#;
 
 pub struct HomeItem {
@@ -706,13 +836,96 @@ fn render_layout(
         "</nav></header><main>{content}</main><footer><p>{powered_by}</p><p>{author_by}</p></footer>"
     );
     let warning = gdpr_warning_text(selected_language);
+    let copy_code_labels = copy_code_labels(selected_language);
+    let copy_code_script = COPY_CODE_SCRIPT_TEMPLATE
+        .replace("__COPY_LABEL__", copy_code_labels.copy)
+        .replace("__COPIED_LABEL__", copy_code_labels.copied)
+        .replace("__FAILED_LABEL__", copy_code_labels.failed)
+        .replace("__ARIA_LABEL__", copy_code_labels.aria)
+        .replace("__EXAMPLE_LABEL__", copy_code_labels.example);
     let _ = write!(
         html,
-        "<aside class=\"gdpr-warning\" id=\"gdpr-warning\" role=\"note\"><p>{}</p><button type=\"button\" id=\"gdpr-dismiss\">{}</button></aside><script>(function(){{var key=\"rustyblogger-gdpr-dismissed\";var warning=document.getElementById(\"gdpr-warning\");if(!warning){{return;}}var dismissed=false;try{{dismissed=window.localStorage.getItem(key)===\"1\";}}catch(error){{dismissed=false;}}if(dismissed){{warning.hidden=true;return;}}var button=document.getElementById(\"gdpr-dismiss\");button.addEventListener(\"click\",function(){{warning.hidden=true;try{{window.localStorage.setItem(key,\"1\");}}catch(error){{}}}});}})();</script></body></html>",
+        "<aside class=\"gdpr-warning\" id=\"gdpr-warning\" role=\"note\"><p>{}</p><button type=\"button\" id=\"gdpr-dismiss\">{}</button></aside><script>(function(){{var key=\"rustyblogger-gdpr-dismissed\";var warning=document.getElementById(\"gdpr-warning\");if(!warning){{return;}}var dismissed=false;try{{dismissed=window.localStorage.getItem(key)===\"1\";}}catch(error){{dismissed=false;}}if(dismissed){{warning.hidden=true;return;}}var button=document.getElementById(\"gdpr-dismiss\");button.addEventListener(\"click\",function(){{warning.hidden=true;try{{window.localStorage.setItem(key,\"1\");}}catch(error){{}}}});}})();</script><script>{copy_code_script}</script></body></html>",
         escape_html(warning.message),
         escape_html(warning.dismiss_label)
     );
     html
+}
+
+struct CopyCodeLabels {
+    copy: &'static str,
+    copied: &'static str,
+    failed: &'static str,
+    aria: &'static str,
+    example: &'static str,
+}
+
+fn copy_code_labels(language: &str) -> CopyCodeLabels {
+    match language {
+        "ru" => CopyCodeLabels {
+            copy: "Копировать",
+            copied: "Скопировано",
+            failed: "Не удалось",
+            aria: "Копировать код",
+            example: "Пример кода",
+        },
+        "zh" => CopyCodeLabels {
+            copy: "复制",
+            copied: "已复制",
+            failed: "复制失败",
+            aria: "复制代码",
+            example: "代码示例",
+        },
+        "de" => CopyCodeLabels {
+            copy: "Kopieren",
+            copied: "Kopiert",
+            failed: "Kopieren fehlgeschlagen",
+            aria: "Code kopieren",
+            example: "Codebeispiel",
+        },
+        "ja" => CopyCodeLabels {
+            copy: "コピー",
+            copied: "コピーしました",
+            failed: "コピー失敗",
+            aria: "コードをコピー",
+            example: "コード例",
+        },
+        "fr" => CopyCodeLabels {
+            copy: "Copier",
+            copied: "Copié",
+            failed: "Échec de la copie",
+            aria: "Copier le code",
+            example: "Exemple de code",
+        },
+        "es" => CopyCodeLabels {
+            copy: "Copiar",
+            copied: "Copiado",
+            failed: "Error al copiar",
+            aria: "Copiar código",
+            example: "Ejemplo de código",
+        },
+        "pt" => CopyCodeLabels {
+            copy: "Copiar",
+            copied: "Copiado",
+            failed: "Falha ao copiar",
+            aria: "Copiar código",
+            example: "Exemplo de código",
+        },
+        "hi" => CopyCodeLabels {
+            copy: "कॉपी करें",
+            copied: "कॉपी हो गया",
+            failed: "कॉपी विफल",
+            aria: "कोड कॉपी करें",
+            example: "कोड उदाहरण",
+        },
+        _ => CopyCodeLabels {
+            copy: "Copy",
+            copied: "Copied",
+            failed: "Copy failed",
+            aria: "Copy code",
+            example: "Code example",
+        },
+    }
 }
 
 struct GdprWarningText {
