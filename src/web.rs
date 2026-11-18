@@ -351,7 +351,6 @@ fn build_home_page(
         posts_per_page,
         current_page,
         total_pages,
-        total_items,
     })
 }
 

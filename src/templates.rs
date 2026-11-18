@@ -206,7 +206,6 @@ pub struct HomePage {
     pub posts_per_page: usize,
     pub current_page: usize,
     pub total_pages: usize,
-    pub total_items: usize,
 }
 
 pub struct PostPage {
@@ -227,15 +226,9 @@ pub struct MessagePage {
 
 pub fn render_home(page: &HomePage) -> String {
     let mut content = String::new();
-    let heading = match &page.category {
-        Some(category) => format!("Posts in {}", escape_html(category)),
-        None => "Posts".to_string(),
-    };
-    let _ = write!(
-        content,
-        "<h1>{} <span class=\"badge\">{}</span></h1>",
-        heading, page.total_items
-    );
+    if let Some(category) = &page.category {
+        let _ = write!(content, "<h1>Posts in {}</h1>", escape_html(category));
+    }
     if page.fallback_to_default {
         let _ = write!(
             content,
