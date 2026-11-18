@@ -7,6 +7,7 @@ use reqwest::blocking::Client;
 use reqwest::StatusCode;
 use serde::Deserialize;
 
+use crate::html_repair::normalize_html_body;
 use crate::model::{BlogSnapshot, PostRecord};
 use crate::storage::{BlogRepository, RedbPostStore};
 
@@ -218,7 +219,7 @@ fn to_post_record(
         language: language.to_string(),
         title: decode_html_entities(post.title.rendered.trim()),
         categories: post_categories,
-        body_html: post.content.rendered,
+        body_html: normalize_html_body(&post.content.rendered),
         source_path: post.link,
         published_unix_seconds,
         published_date,

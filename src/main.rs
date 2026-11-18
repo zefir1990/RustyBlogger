@@ -1,6 +1,7 @@
 mod cli;
 mod date;
 mod git_history;
+mod html_repair;
 mod importer;
 mod model;
 mod parser;
