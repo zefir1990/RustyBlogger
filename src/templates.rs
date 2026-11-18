@@ -464,7 +464,7 @@ pub fn render_home(page: &HomePage) -> String {
             );
             let _ = write!(
                 content,
-                "<li class=\"card post-card\"><a class=\"card-title\" href=\"{}\">{}</a><div class=\"card-meta\">",
+                "<li class=\"card post-card\"><a class=\"card-title\" href=\"{}\" target=\"_self\">{}</a><div class=\"card-meta\">",
                 escape_html(&post_href),
                 escape_html(&post.title)
             );
@@ -472,7 +472,7 @@ pub fn render_home(page: &HomePage) -> String {
                 let localized_category = category_label(category, &page.selected_language);
                 let _ = write!(
                     content,
-                    "<a class=\"badge category\" href=\"/category/{}?lang={}\">{}</a>",
+                    "<a class=\"badge category\" href=\"/category/{}?lang={}\" target=\"_self\">{}</a>",
                     urlencoding::encode(category),
                     urlencoding::encode(&page.selected_language),
                     escape_html(&localized_category)
@@ -489,7 +489,7 @@ pub fn render_home(page: &HomePage) -> String {
             }
             let _ = write!(
                 content,
-                "</div><div class=\"post-body\">{}</div><p><a class=\"permalink\" href=\"{}\">Permalink</a></p></li>",
+                "</div><div class=\"post-body\">{}</div><p><a class=\"permalink\" href=\"{}\" target=\"_self\">Permalink</a></p></li>",
                 post.body_html,
                 escape_html(&post_href)
             );
@@ -524,7 +524,7 @@ fn render_pagination(content: &mut String, page: &HomePage) {
     if page.current_page > 1 {
         let _ = write!(
             content,
-            "<a href=\"{}\" rel=\"prev\">Previous</a>",
+            "<a href=\"{}\" rel=\"prev\" target=\"_self\">Previous</a>",
             escape_html(&pagination_href(page, page.current_page - 1))
         );
     } else {
@@ -536,7 +536,7 @@ fn render_pagination(content: &mut String, page: &HomePage) {
         } else {
             let _ = write!(
                 content,
-                "<a href=\"{}\">{page_number}</a>",
+                "<a href=\"{}\" target=\"_self\">{page_number}</a>",
                 escape_html(&pagination_href(page, page_number))
             );
         }
@@ -544,7 +544,7 @@ fn render_pagination(content: &mut String, page: &HomePage) {
     if page.current_page < page.total_pages {
         let _ = write!(
             content,
-            "<a href=\"{}\" rel=\"next\">Next</a>",
+            "<a href=\"{}\" rel=\"next\" target=\"_self\">Next</a>",
             escape_html(&pagination_href(page, page.current_page + 1))
         );
     } else {
@@ -623,7 +623,7 @@ pub fn render_post(page: &PostPage) -> String {
 
 pub fn render_message(page: &MessagePage) -> String {
     let content = format!(
-        "<h1>{}</h1><p>{}</p><p><a href=\"/\">{}</a></p>",
+        "<h1>{}</h1><p>{}</p><p><a href=\"/\" target=\"_self\">{}</a></p>",
         escape_html(&page.title),
         escape_html(&page.message),
         escape_html(back_to_posts_label(&page.selected_language))
@@ -649,7 +649,7 @@ fn render_layout(
     let mut html = String::new();
     let _ = write!(
         html,
-        "<!doctype html><html lang=\"{}\"><head><meta charset=\"utf-8\"/><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"/><base target=\"_blank\"/><title>{}</title><link rel=\"stylesheet\" href=\"/assets/style.css\"/></head><body><header class=\"site-header\"><a class=\"site-title\" href=\"/\">{}</a><nav class=\"language-switcher\" aria-label=\"Language\">",
+        "<!doctype html><html lang=\"{}\"><head><meta charset=\"utf-8\"/><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"/><base target=\"_blank\"/><title>{}</title><link rel=\"stylesheet\" href=\"/assets/style.css\"/></head><body><header class=\"site-header\"><a class=\"site-title\" href=\"/\" target=\"_self\">{}</a><nav class=\"language-switcher\" aria-label=\"Language\">",
         escape_html(selected_language),
         escape_html(site_title),
         escape_html(site_title)
@@ -678,7 +678,7 @@ fn render_layout(
         };
         let _ = write!(
             html,
-            "<a href=\"/language/{}?next={}\"{}{} hreflang=\"{}\" title=\"{}\">{}</a>",
+            "<a href=\"/language/{}?next={}\"{}{} hreflang=\"{}\" title=\"{}\" target=\"_self\">{}</a>",
             urlencoding::encode(&language.code),
             urlencoding::encode(next_path),
             class_attribute,
