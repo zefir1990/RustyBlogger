@@ -478,13 +478,6 @@ pub fn render_home(page: &HomePage) -> String {
                     escape_html(&localized_category)
                 );
             }
-            for language in &item.languages {
-                let _ = write!(
-                    content,
-                    "<span class=\"badge\">{}</span>",
-                    escape_html(&language_label(language))
-                );
-            }
             let post_date = if post.published_date.is_empty() {
                 format_unix_date(post.published_unix_seconds)
             } else {
@@ -577,11 +570,6 @@ pub fn render_post(page: &PostPage) -> String {
     let mut content = String::new();
     let _ = write!(
         content,
-        "<nav class=\"breadcrumbs\"><a href=\"/?lang={}\">Posts</a></nav>",
-        urlencoding::encode(&page.selected_language)
-    );
-    let _ = write!(
-        content,
         "<article class=\"post\"><h1>{}</h1><div class=\"post-meta\">",
         escape_html(&page.post.title)
     );
@@ -602,8 +590,7 @@ pub fn render_post(page: &PostPage) -> String {
     };
     let _ = write!(
         content,
-        "<span class=\"badge\">{}</span><time datetime=\"{post_date}\">{post_date}</time></div>",
-        escape_html(&language_label(&page.post.language))
+        "<time datetime=\"{post_date}\">{post_date}</time></div>"
     );
     if page.post.language != page.selected_language {
         let notice = translation_notice_text(
@@ -701,9 +688,22 @@ fn render_layout(
             escape_html(&language_label(&language.code))
         );
     }
+    let powered_by = footer_powered_by_label(selected_language)
+        .replace(
+            "{rustyblogger}",
+            "<a href=\"https://github.com/zefir1990/RustyBlogger\" rel=\"noopener\" target=\"_blank\">RustyBlogger</a>",
+        )
+        .replace(
+            "{redb}",
+            "<a href=\"https://github.com/cberner/redb\" rel=\"noopener\" target=\"_blank\">redb</a>",
+        );
+    let author_by = footer_author_label(selected_language).replace(
+        "{blog}",
+        "<a href=\"https://zefir1990.space/posts/zefir1990\">zefir1990.space/posts/zefir1990</a>",
+    );
     let _ = write!(
         html,
-        "</nav></header><main>{content}</main><footer><p>Powered by <a href=\"https://github.com/zefir1990/RustyBlogger\" rel=\"noopener\" target=\"_blank\">RustyBlogger</a> and <a href=\"https://github.com/cberner/redb\" rel=\"noopener\" target=\"_blank\">redb</a></p><p>Blog by <a href=\"https://zefir1990.space/posts/zefir1990\">zefir1990.space/posts/zefir1990</a></p></footer>"
+        "</nav></header><main>{content}</main><footer><p>{powered_by}</p><p>{author_by}</p></footer>"
     );
     let warning = gdpr_warning_text(selected_language);
     let _ = write!(
@@ -853,6 +853,34 @@ pub fn method_not_allowed_text(language: &str) -> (&'static str, &'static str) {
             "Method not allowed",
             "This request method is not supported.",
         ),
+    }
+}
+
+fn footer_powered_by_label(language: &str) -> &'static str {
+    match language {
+        "ru" => "Работает на {rustyblogger} и {redb}",
+        "zh" => "由 {rustyblogger} 和 {redb} 提供支持",
+        "de" => "Bereitgestellt von {rustyblogger} und {redb}",
+        "ja" => "{rustyblogger} と {redb} で動作",
+        "fr" => "Propulsé par {rustyblogger} et {redb}",
+        "es" => "Con tecnología de {rustyblogger} y {redb}",
+        "pt" => "Desenvolvido com {rustyblogger} e {redb}",
+        "hi" => "{rustyblogger} और {redb} द्वारा संचालित",
+        _ => "Powered by {rustyblogger} and {redb}",
+    }
+}
+
+fn footer_author_label(language: &str) -> &'static str {
+    match language {
+        "ru" => "Автор: {blog}",
+        "zh" => "作者：{blog}",
+        "de" => "Autor: {blog}",
+        "ja" => "著者: {blog}",
+        "fr" => "Auteur : {blog}",
+        "es" => "Autor: {blog}",
+        "pt" => "Autor: {blog}",
+        "hi" => "लेखक: {blog}",
+        _ => "Author: {blog}",
     }
 }
 
