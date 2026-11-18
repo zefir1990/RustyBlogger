@@ -54,9 +54,6 @@ body::before {
 a { color: var(--accent); text-decoration-thickness: from-font; text-underline-offset: 0.18em; }
 a:hover { color: var(--accent-secondary); }
 .site-header {
-  position: sticky;
-  top: 0;
-  z-index: 30;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
