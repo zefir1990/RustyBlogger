@@ -144,6 +144,8 @@ pub async fn serve(options: ServeOptions) -> Result<()> {
         .route("/health", get(api_health))
         .route("/assets/style.css", get(stylesheet))
         .nest_service("/media", ServeDir::new(options.media_directory))
+        .fallback(not_found_page)
+        .method_not_allowed_fallback(method_not_allowed_page)
         .with_state(state)
         .layer(CompressionLayer::new())
         .layer(TraceLayer::new_for_http());
@@ -203,18 +205,63 @@ async fn post_page(
 }
 
 fn render_not_found(state: &AppState, selected_language: &str, slug: &str) -> Response {
+    let (title, message) = templates::post_not_found_text(selected_language, slug);
+    render_message_page(
+        state,
+        selected_language,
+        title,
+        message,
+        StatusCode::NOT_FOUND,
+    )
+}
+
+async fn not_found_page(
+    State(state): State<AppState>,
+    Query(query): Query<LanguageQuery>,
+    headers: HeaderMap,
+) -> Response {
+    let selected_language = resolve_language(&state, &query, &headers);
+    let (title, message) = templates::page_not_found_text(&selected_language);
+    render_message_page(
+        &state,
+        &selected_language,
+        title.to_string(),
+        message.to_string(),
+        StatusCode::NOT_FOUND,
+    )
+}
+
+async fn method_not_allowed_page(
+    State(state): State<AppState>,
+    Query(query): Query<LanguageQuery>,
+    headers: HeaderMap,
+) -> Response {
+    let selected_language = resolve_language(&state, &query, &headers);
+    let (title, message) = templates::method_not_allowed_text(&selected_language);
+    render_message_page(
+        &state,
+        &selected_language,
+        title.to_string(),
+        message.to_string(),
+        StatusCode::METHOD_NOT_ALLOWED,
+    )
+}
+
+fn render_message_page(
+    state: &AppState,
+    selected_language: &str,
+    title: String,
+    message: String,
+    status: StatusCode,
+) -> Response {
     let page = MessagePage {
         site_title: state.site_title.as_ref().to_string(),
         selected_language: selected_language.to_string(),
         languages: (*state.languages).clone(),
-        title: "Post not found".to_string(),
-        message: format!("No post with slug \"{slug}\"."),
+        title,
+        message,
     };
-    (
-        StatusCode::NOT_FOUND,
-        Html(templates::render_message(&page)),
-    )
-        .into_response()
+    (status, Html(templates::render_message(&page))).into_response()
 }
 
 async fn switch_language(
@@ -267,10 +314,12 @@ async fn api_post(
     headers: HeaderMap,
 ) -> Result<Json<ApiPostResponse>, AppError> {
     let requested_language = resolve_language(&state, &query, &headers);
-    let slug_record = state
-        .repository
-        .get_slug(&slug)?
-        .ok_or_else(|| AppError::not_found(format!("post \"{slug}\" not found")))?;
+    let slug_record = state.repository.get_slug(&slug)?.ok_or_else(|| {
+        AppError::not_found(templates::post_not_found_message(
+            &requested_language,
+            &slug,
+        ))
+    })?;
     let selected_language = if slug_record.languages.contains(&requested_language) {
         requested_language.clone()
     } else {
@@ -279,7 +328,12 @@ async fn api_post(
     let post = state
         .repository
         .get_post(&slug, &selected_language)?
-        .ok_or_else(|| AppError::not_found(format!("post \"{slug}\" not found")))?;
+        .ok_or_else(|| {
+            AppError::not_found(templates::post_not_found_message(
+                &requested_language,
+                &slug,
+            ))
+        })?;
     Ok(Json(ApiPostResponse {
         post,
         requested_language,
@@ -300,8 +354,9 @@ async fn api_language_posts(
 ) -> Result<Json<Vec<PostSummary>>, AppError> {
     let normalized_language = language.trim().to_ascii_lowercase();
     if !language_is_supported(&state, &normalized_language) {
-        return Err(AppError::not_found(format!(
-            "language \"{language}\" not found"
+        return Err(AppError::not_found(templates::language_not_found_message(
+            state.default_language.as_ref(),
+            &language,
         )));
     }
     Ok(Json(state.repository.list_posts(&normalized_language)?))

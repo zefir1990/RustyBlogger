@@ -436,15 +436,23 @@ pub fn render_home(page: &HomePage) -> String {
         );
     }
     if page.fallback_to_default {
+        let notice = fallback_notice_text(
+            &page.selected_language,
+            &page.selected_language,
+            &page.default_language,
+        );
         let _ = write!(
             content,
-            "<div class=\"notice\">No posts in {} yet, showing {}.</div>",
-            escape_html(&language_label(&page.selected_language)),
-            escape_html(&language_label(&page.default_language))
+            "<div class=\"notice\">{}</div>",
+            escape_html(&notice)
         );
     }
     if page.items.is_empty() {
-        content.push_str("<p>No posts found.</p>");
+        let _ = write!(
+            content,
+            "<p>{}</p>",
+            escape_html(no_posts_found_label(&page.selected_language))
+        );
     } else {
         content.push_str("<ul class=\"post-list\">");
         for item in &page.items {
@@ -598,13 +606,16 @@ pub fn render_post(page: &PostPage) -> String {
         escape_html(&language_label(&page.post.language))
     );
     if page.post.language != page.selected_language {
+        let notice = translation_notice_text(
+            &page.selected_language,
+            &page.selected_language,
+            &page.post.language,
+            &page.post.slug,
+        );
         let _ = write!(
             content,
-            "<div class=\"notice\">Translation into {} is not available, showing {}. Pick another language above or add a translated .txt file with slug \"{}\" and language \"{}\".</div>",
-            escape_html(&language_label(&page.selected_language)),
-            escape_html(&language_label(&page.post.language)),
-            escape_html(&page.post.slug),
-            escape_html(&page.selected_language)
+            "<div class=\"notice\">{}</div>",
+            escape_html(&notice)
         );
     }
     let _ = write!(
@@ -625,9 +636,10 @@ pub fn render_post(page: &PostPage) -> String {
 
 pub fn render_message(page: &MessagePage) -> String {
     let content = format!(
-        "<h1>{}</h1><p>{}</p><p><a href=\"/\">Back to posts</a></p>",
+        "<h1>{}</h1><p>{}</p><p><a href=\"/\">{}</a></p>",
         escape_html(&page.title),
-        escape_html(&page.message)
+        escape_html(&page.message),
+        escape_html(back_to_posts_label(&page.selected_language))
     );
     render_layout(
         &page.site_title,
@@ -746,6 +758,198 @@ fn gdpr_warning_text(language: &str) -> GdprWarningText {
             message: "This site uses a functional cookie to remember your language choice and local storage to hide this notice. No tracking data is stored.",
             dismiss_label: "Got it",
         },
+    }
+}
+
+pub fn post_not_found_text(language: &str, slug: &str) -> (String, String) {
+    let title = match language {
+        "ru" => "Пост не найден",
+        "zh" => "文章未找到",
+        "de" => "Beitrag nicht gefunden",
+        "ja" => "投稿が見つかりません",
+        "fr" => "Article introuvable",
+        "es" => "Publicación no encontrada",
+        "pt" => "Publicação não encontrada",
+        "hi" => "पोस्ट नहीं मिली",
+        _ => "Post not found",
+    };
+    (title.to_string(), post_not_found_message(language, slug))
+}
+
+pub fn post_not_found_message(language: &str, slug: &str) -> String {
+    match language {
+        "ru" => format!("Пост со слагом «{slug}» не найден."),
+        "zh" => format!("未找到别名为“{slug}”的文章。"),
+        "de" => format!("Kein Beitrag mit dem Slug „{slug}“ gefunden."),
+        "ja" => format!("スラッグ「{slug}」の投稿は見つかりません。"),
+        "fr" => format!("Aucun article avec le slug « {slug} » n’a été trouvé."),
+        "es" => format!("No se encontró ninguna publicación con el slug «{slug}»."),
+        "pt" => format!("Nenhuma publicação encontrada com o slug «{slug}»."),
+        "hi" => format!("स्लग \"{slug}\" वाली कोई पोस्ट नहीं मिली।"),
+        _ => format!("No post with slug \"{slug}\"."),
+    }
+}
+
+pub fn language_not_found_message(language: &str, missing_language: &str) -> String {
+    match language {
+        "ru" => format!("Язык «{missing_language}» не найден."),
+        "zh" => format!("未找到语言“{missing_language}”。"),
+        "de" => format!("Sprache „{missing_language}“ nicht gefunden."),
+        "ja" => format!("言語「{missing_language}」が見つかりません。"),
+        "fr" => format!("Langue « {missing_language} » introuvable."),
+        "es" => format!("Idioma «{missing_language}» no encontrado."),
+        "pt" => format!("Idioma «{missing_language}» não encontrado."),
+        "hi" => format!("भाषा \"{missing_language}\" नहीं मिली।"),
+        _ => format!("language \"{missing_language}\" not found"),
+    }
+}
+
+pub fn page_not_found_text(language: &str) -> (&'static str, &'static str) {
+    match language {
+        "ru" => ("Страница не найдена", "Запрошенная страница не существует."),
+        "zh" => ("页面未找到", "请求的页面不存在。"),
+        "de" => (
+            "Seite nicht gefunden",
+            "Die angeforderte Seite existiert nicht.",
+        ),
+        "ja" => (
+            "ページが見つかりません",
+            "リクエストされたページは存在しません。",
+        ),
+        "fr" => ("Page introuvable", "La page demandée n’existe pas."),
+        "es" => ("Página no encontrada", "La página solicitada no existe."),
+        "pt" => ("Página não encontrada", "A página solicitada não existe."),
+        "hi" => ("पृष्ठ नहीं मिला", "अनुरोधित पृष्ठ मौजूद नहीं है।"),
+        _ => ("Page not found", "The requested page does not exist."),
+    }
+}
+
+pub fn method_not_allowed_text(language: &str) -> (&'static str, &'static str) {
+    match language {
+        "ru" => ("Метод не разрешён", "Этот метод запроса не поддерживается."),
+        "zh" => ("方法不允许", "不支持此请求方法。"),
+        "de" => (
+            "Methode nicht erlaubt",
+            "Diese Anfragemethode wird nicht unterstützt.",
+        ),
+        "ja" => (
+            "メソッドが許可されていません",
+            "このリクエストメソッドはサポートされていません。",
+        ),
+        "fr" => (
+            "Méthode non autorisée",
+            "Cette méthode de requête n’est pas prise en charge.",
+        ),
+        "es" => (
+            "Método no permitido",
+            "Este método de solicitud no es compatible.",
+        ),
+        "pt" => (
+            "Método não permitido",
+            "Este método de solicitação não é suportado.",
+        ),
+        "hi" => ("विधि की अनुमति नहीं है", "यह अनुरोध विधि समर्थित नहीं है।"),
+        _ => (
+            "Method not allowed",
+            "This request method is not supported.",
+        ),
+    }
+}
+
+fn back_to_posts_label(language: &str) -> &'static str {
+    match language {
+        "ru" => "Назад к постам",
+        "zh" => "返回文章",
+        "de" => "Zurück zu den Beiträgen",
+        "ja" => "投稿一覧に戻る",
+        "fr" => "Retour aux articles",
+        "es" => "Volver a las publicaciones",
+        "pt" => "Voltar às publicações",
+        "hi" => "पोस्ट पर वापस जाएँ",
+        _ => "Back to posts",
+    }
+}
+
+fn no_posts_found_label(language: &str) -> &'static str {
+    match language {
+        "ru" => "Посты не найдены.",
+        "zh" => "未找到文章。",
+        "de" => "Keine Beiträge gefunden.",
+        "ja" => "投稿が見つかりません。",
+        "fr" => "Aucun article trouvé.",
+        "es" => "No se encontraron publicaciones.",
+        "pt" => "Nenhuma publicação encontrada.",
+        "hi" => "कोई पोस्ट नहीं मिली।",
+        _ => "No posts found.",
+    }
+}
+
+fn fallback_notice_text(language: &str, selected_language: &str, default_language: &str) -> String {
+    let selected_label = language_label(selected_language);
+    let default_label = language_label(default_language);
+    match language {
+        "ru" => format!(
+            "Постов на языке {selected_label} пока нет, показаны посты на языке {default_label}."
+        ),
+        "zh" => format!("暂时没有{selected_label}文章，改为显示{default_label}。"),
+        "de" => format!(
+            "Noch keine Beiträge auf {selected_label} verfügbar, es werden {default_label} angezeigt."
+        ),
+        "ja" => format!(
+            "{selected_label}の投稿はまだありません。{default_label}を表示しています。"
+        ),
+        "fr" => format!(
+            "Aucun article en {selected_label} pour le moment, affichage en {default_label}."
+        ),
+        "es" => format!(
+            "Aún no hay publicaciones en {selected_label}, se muestran en {default_label}."
+        ),
+        "pt" => format!(
+            "Ainda não há publicações em {selected_label}, exibindo em {default_label}."
+        ),
+        "hi" => format!(
+            "{selected_label} में अभी कोई पोस्ट नहीं है, {default_label} में दिखाया जा रहा है।"
+        ),
+        _ => format!("No posts in {selected_label} yet, showing {default_label}."),
+    }
+}
+
+fn translation_notice_text(
+    language: &str,
+    selected_language: &str,
+    post_language: &str,
+    slug: &str,
+) -> String {
+    let selected_label = language_label(selected_language);
+    let post_label = language_label(post_language);
+    match language {
+        "ru" => format!(
+            "Перевод на {selected_label} недоступен, показан {post_label}. Выберите другой язык выше или добавьте переведённый файл .txt со слагом \"{slug}\" и языком \"{selected_language}\"."
+        ),
+        "zh" => format!(
+            "暂无法提供{selected_label}翻译，当前显示{post_label}。请在上方选择其他语言，或添加别名为“{slug}”、语言为“{selected_language}”的 .txt 翻译文件。"
+        ),
+        "de" => format!(
+            "Eine Übersetzung ins {selected_label} ist nicht verfügbar, angezeigt wird {post_label}. Wähle oben eine andere Sprache oder füge eine übersetzte .txt-Datei mit dem Slug „{slug}“ und der Sprache „{selected_language}“ hinzu."
+        ),
+        "ja" => format!(
+            "{selected_label}への翻訳はありません。{post_label}を表示しています。上から別の言語を選ぶか、スラッグ「{slug}」、言語「{selected_language}」の翻訳済み .txt ファイルを追加してください。"
+        ),
+        "fr" => format!(
+            "La traduction en {selected_label} n’est pas disponible, affichage en {post_label}. Choisissez une autre langue ci-dessus ou ajoutez un fichier .txt traduit avec le slug « {slug} » et la langue « {selected_language} »."
+        ),
+        "es" => format!(
+            "La traducción a {selected_label} no está disponible; se muestra en {post_label}. Elige otro idioma arriba o añade un archivo .txt traducido con el slug «{slug}» y el idioma «{selected_language}»."
+        ),
+        "pt" => format!(
+            "A tradução para {selected_label} não está disponível; exibindo em {post_label}. Escolha outro idioma acima ou adicione um arquivo .txt traduzido com o slug «{slug}» e o idioma «{selected_language}»."
+        ),
+        "hi" => format!(
+            "{selected_label} में अनुवाद उपलब्ध नहीं है, {post_label} में दिखाया जा रहा है। ऊपर से दूसरी भाषा चुनें या स्लग \"{slug}\" और भाषा \"{selected_language}\" वाली अनुवादित .txt फ़ाइल जोड़ें।"
+        ),
+        _ => format!(
+            "Translation into {selected_label} is not available, showing {post_label}. Pick another language above or add a translated .txt file with slug \"{slug}\" and language \"{selected_language}\"."
+        ),
     }
 }
 
