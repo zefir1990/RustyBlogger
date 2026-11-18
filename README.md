@@ -7,6 +7,7 @@ Multilingual blog engine written in Rust. It imports WordPress-style `.txt` post
 - Fast embedded storage with `redb`
 - Multilingual posts with language switching and fallback
 - Post dates taken from each file's first git commit, newest first
+- Localized GDPR cookie notice in all nine interface languages
 - Full posts on the home page with pagination
 - Configurable posts per page stored in the database
 - Category pages

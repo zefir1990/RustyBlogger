@@ -183,6 +183,39 @@ footer {
   color: var(--muted);
   font-size: 0.85rem;
 }
+.gdpr-warning {
+  position: fixed;
+  left: 50%;
+  bottom: 1rem;
+  transform: translateX(-50%);
+  z-index: 20;
+  width: min(820px, calc(100% - 2.5rem));
+  margin: 0;
+  padding: 0.85rem 1rem;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  border: 1px solid var(--border);
+  border-left: 4px solid var(--accent);
+  border-radius: 10px;
+  background: var(--surface);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.22);
+  font-size: 0.88rem;
+}
+.gdpr-warning p { margin: 0; flex: 1 1 16rem; }
+.gdpr-warning button {
+  border: 1px solid var(--accent);
+  border-radius: 8px;
+  background: var(--accent);
+  color: var(--background);
+  padding: 0.35rem 0.8rem;
+  font: inherit;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+.gdpr-warning[hidden] { display: none; }
 @media (max-width: 560px) {
   html { font-size: 16px; }
   h1 { font-size: 1.6rem; }
@@ -483,9 +516,62 @@ fn render_layout(
     }
     let _ = write!(
         html,
-        "</nav></header><main>{content}</main><footer><p>Powered by <a href=\"https://github.com/zefir1990/RustyBlogger\" rel=\"noopener\" target=\"_blank\">RustyBlogger</a> and <a href=\"https://github.com/cberner/redb\" rel=\"noopener\" target=\"_blank\">redb</a></p></footer></body></html>"
+        "</nav></header><main>{content}</main><footer><p>Powered by <a href=\"https://github.com/zefir1990/RustyBlogger\" rel=\"noopener\" target=\"_blank\">RustyBlogger</a> and <a href=\"https://github.com/cberner/redb\" rel=\"noopener\" target=\"_blank\">redb</a></p></footer>"
+    );
+    let warning = gdpr_warning_text(selected_language);
+    let _ = write!(
+        html,
+        "<aside class=\"gdpr-warning\" id=\"gdpr-warning\" role=\"note\"><p>{}</p><button type=\"button\" id=\"gdpr-dismiss\">{}</button></aside><script>(function(){{var key=\"rustyblogger-gdpr-dismissed\";var warning=document.getElementById(\"gdpr-warning\");if(!warning){{return;}}var dismissed=false;try{{dismissed=window.localStorage.getItem(key)===\"1\";}}catch(error){{dismissed=false;}}if(dismissed){{warning.hidden=true;return;}}var button=document.getElementById(\"gdpr-dismiss\");button.addEventListener(\"click\",function(){{warning.hidden=true;try{{window.localStorage.setItem(key,\"1\");}}catch(error){{}}}});}})();</script></body></html>",
+        escape_html(warning.message),
+        escape_html(warning.dismiss_label)
     );
     html
+}
+
+struct GdprWarningText {
+    message: &'static str,
+    dismiss_label: &'static str,
+}
+
+fn gdpr_warning_text(language: &str) -> GdprWarningText {
+    match language {
+        "ru" => GdprWarningText {
+            message: "Сайт использует функциональный cookie для запоминания языка и локальное хранилище, чтобы скрыть это уведомление. Данные для отслеживания не сохраняются.",
+            dismiss_label: "Понятно",
+        },
+        "zh" => GdprWarningText {
+            message: "本站使用功能性 Cookie 记住您的语言选择，并使用本地存储隐藏此提示。不会存储跟踪数据。",
+            dismiss_label: "知道了",
+        },
+        "de" => GdprWarningText {
+            message: "Diese Website verwendet ein funktionales Cookie, um Ihre Sprachauswahl zu speichern, und lokalen Speicher, um diesen Hinweis auszublenden. Es werden keine Tracking-Daten gespeichert.",
+            dismiss_label: "Verstanden",
+        },
+        "ja" => GdprWarningText {
+            message: "このサイトでは、言語の選択を記憶するために機能性 Cookie を、この通知を非表示にするためにローカルストレージを使用します。追跡データは保存されません。",
+            dismiss_label: "了解",
+        },
+        "fr" => GdprWarningText {
+            message: "Ce site utilise un cookie fonctionnel pour mémoriser votre choix de langue et le stockage local pour masquer cet avis. Aucune donnée de suivi n’est conservée.",
+            dismiss_label: "Compris",
+        },
+        "es" => GdprWarningText {
+            message: "Este sitio utiliza una cookie funcional para recordar su elección de idioma y el almacenamiento local para ocultar este aviso. No se almacenan datos de seguimiento.",
+            dismiss_label: "Entendido",
+        },
+        "pt" => GdprWarningText {
+            message: "Este site utiliza um cookie funcional para memorizar a sua escolha de idioma e o armazenamento local para ocultar este aviso. Não são armazenados dados de rastreamento.",
+            dismiss_label: "Entendi",
+        },
+        "hi" => GdprWarningText {
+            message: "यह साइट आपकी भाषा का चयन याद रखने के लिए एक कार्यात्मक कुकी और इस सूचना को छिपाने के लिए स्थानीय स्टोरेज का उपयोग करती है। कोई ट्रैकिंग डेटा संग्रहीत नहीं किया जाता है।",
+            dismiss_label: "समझ गया",
+        },
+        _ => GdprWarningText {
+            message: "This site uses a functional cookie to remember your language choice and local storage to hide this notice. No tracking data is stored.",
+            dismiss_label: "Got it",
+        },
+    }
 }
 
 pub fn language_label(language: &str) -> String {
