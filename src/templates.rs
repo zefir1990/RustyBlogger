@@ -1,6 +1,6 @@
 use std::fmt::Write as _;
 
-use crate::model::{LanguageRecord, PostRecord, PostSummary};
+use crate::model::{LanguageRecord, PostRecord};
 use crate::render::escape_html;
 
 pub const STYLESHEET: &str = r#"
@@ -138,6 +138,43 @@ h2 { line-height: 1.3; margin-top: 2rem; font-size: 1.45rem; }
 }
 .post-body pre code { background: transparent; padding: 0; font-size: inherit; }
 .post-body .post-link { margin: 0.5rem 0; }
+.post-card { padding: 1.25rem 1.35rem; }
+.post-card .post-body { margin-top: 0.9rem; }
+.post-card .card-title { font-size: 1.4rem; }
+.permalink { font-size: 0.85rem; }
+.pagination {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  margin-top: 2rem;
+}
+.pagination a, .pagination span {
+  min-width: 2.1rem;
+  padding: 0.25rem 0.55rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  text-align: center;
+  text-decoration: none;
+  color: var(--muted);
+  background: var(--surface);
+  font-size: 0.9rem;
+}
+.pagination a:hover { border-color: var(--accent); color: var(--accent); }
+.pagination .current {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-weight: 650;
+}
+.pagination .disabled { opacity: 0.4; }
+.pagination-summary {
+  margin: 0.8rem 0 0;
+  text-align: center;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
 footer {
   max-width: 820px;
   margin: 0 auto;
@@ -152,7 +189,7 @@ footer {
 "#;
 
 pub struct HomeItem {
-    pub summary: PostSummary,
+    pub post: PostRecord,
     pub languages: Vec<String>,
     pub is_fallback: bool,
 }
@@ -165,6 +202,10 @@ pub struct HomePage {
     pub items: Vec<HomeItem>,
     pub category: Option<String>,
     pub fallback_to_default: bool,
+    pub posts_per_page: usize,
+    pub current_page: usize,
+    pub total_pages: usize,
+    pub total_items: usize,
 }
 
 pub struct PostPage {
@@ -192,8 +233,7 @@ pub fn render_home(page: &HomePage) -> String {
     let _ = write!(
         content,
         "<h1>{} <span class=\"badge\">{}</span></h1>",
-        heading,
-        page.items.len()
+        heading, page.total_items
     );
     if page.fallback_to_default {
         let _ = write!(
@@ -208,15 +248,19 @@ pub fn render_home(page: &HomePage) -> String {
     } else {
         content.push_str("<ul class=\"post-list\">");
         for item in &page.items {
-            let summary = &item.summary;
+            let post = &item.post;
+            let post_href = format!(
+                "/posts/{}?lang={}",
+                urlencoding::encode(&post.slug),
+                urlencoding::encode(&page.selected_language)
+            );
             let _ = write!(
                 content,
-                "<li class=\"card\"><a class=\"card-title\" href=\"/posts/{}?lang={}\">{}</a><div class=\"card-meta\">",
-                urlencoding::encode(&summary.slug),
-                urlencoding::encode(&page.selected_language),
-                escape_html(&summary.title)
+                "<li class=\"card post-card\"><a class=\"card-title\" href=\"{}\">{}</a><div class=\"card-meta\">",
+                escape_html(&post_href),
+                escape_html(&post.title)
             );
-            for category in &summary.categories {
+            for category in &post.categories {
                 let _ = write!(
                     content,
                     "<a class=\"badge category\" href=\"/category/{}?lang={}\">{}</a>",
@@ -235,9 +279,15 @@ pub fn render_home(page: &HomePage) -> String {
             if item.is_fallback {
                 content.push_str("<span class=\"badge\">fallback</span>");
             }
-            content.push_str("</div></li>");
+            let _ = write!(
+                content,
+                "</div><div class=\"post-body\">{}</div><p><a class=\"permalink\" href=\"{}\">Permalink</a></p></li>",
+                post.body_html,
+                escape_html(&post_href)
+            );
         }
         content.push_str("</ul>");
+        render_pagination(&mut content, page);
     }
     let next_path = match &page.category {
         Some(category) => format!("/category/{}", urlencoding::encode(category)),
@@ -250,6 +300,61 @@ pub fn render_home(page: &HomePage) -> String {
         &next_path,
         None,
         &content,
+    )
+}
+
+fn render_pagination(content: &mut String, page: &HomePage) {
+    let _ = write!(
+        content,
+        "<p class=\"pagination-summary\">Page {} of {} · {} posts per page</p>",
+        page.current_page, page.total_pages, page.posts_per_page
+    );
+    if page.total_pages <= 1 {
+        return;
+    }
+    content.push_str("<nav class=\"pagination\" aria-label=\"Pagination\">");
+    if page.current_page > 1 {
+        let _ = write!(
+            content,
+            "<a href=\"{}\" rel=\"prev\">Previous</a>",
+            escape_html(&pagination_href(page, page.current_page - 1))
+        );
+    } else {
+        content.push_str("<span class=\"disabled\">Previous</span>");
+    }
+    for page_number in 1..=page.total_pages {
+        if page_number == page.current_page {
+            let _ = write!(content, "<span class=\"current\">{page_number}</span>");
+        } else {
+            let _ = write!(
+                content,
+                "<a href=\"{}\">{page_number}</a>",
+                escape_html(&pagination_href(page, page_number))
+            );
+        }
+    }
+    if page.current_page < page.total_pages {
+        let _ = write!(
+            content,
+            "<a href=\"{}\" rel=\"next\">Next</a>",
+            escape_html(&pagination_href(page, page.current_page + 1))
+        );
+    } else {
+        content.push_str("<span class=\"disabled\">Next</span>");
+    }
+    content.push_str("</nav>");
+}
+
+fn pagination_href(page: &HomePage, page_number: usize) -> String {
+    let base_path = match &page.category {
+        Some(category) => format!("/category/{}", urlencoding::encode(category)),
+        None => "/".to_string(),
+    };
+    format!(
+        "{}?lang={}&page={}",
+        base_path,
+        urlencoding::encode(&page.selected_language),
+        page_number
     )
 }
 

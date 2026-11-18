@@ -6,7 +6,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use anyhow::{Context, Result};
 
 use crate::model::{
-    BlogSnapshot, ImportReport, LanguageRecord, PostRecord, PostSummary, SlugRecord,
+    BlogSettings, BlogSnapshot, ImportReport, LanguageRecord, PostRecord, PostSummary, SlugRecord,
     ValidationIssue,
 };
 use crate::parser::{is_valid_language_code, parse_post_file};
@@ -16,6 +16,7 @@ pub struct SnapshotOptions<'a> {
     pub media_directory: Option<&'a Path>,
     pub default_language: &'a str,
     pub configured_languages: Vec<String>,
+    pub posts_per_page: usize,
 }
 
 pub fn build_snapshot(options: &SnapshotOptions<'_>) -> Result<(BlogSnapshot, ImportReport)> {
@@ -173,6 +174,10 @@ pub fn build_snapshot(options: &SnapshotOptions<'_>) -> Result<(BlogSnapshot, Im
             summaries,
             slugs,
             languages,
+            settings: BlogSettings {
+                posts_per_page: options.posts_per_page,
+            }
+            .normalized(),
             default_language,
             imported_unix_seconds,
         },

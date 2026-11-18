@@ -138,12 +138,32 @@ pub struct LanguageRecord {
     pub post_count: usize,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BlogSettings {
+    pub posts_per_page: usize,
+}
+
+impl Default for BlogSettings {
+    fn default() -> Self {
+        Self { posts_per_page: 10 }
+    }
+}
+
+impl BlogSettings {
+    pub fn normalized(self) -> Self {
+        Self {
+            posts_per_page: self.posts_per_page.max(1),
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct BlogSnapshot {
     pub posts: Vec<PostRecord>,
     pub summaries: Vec<PostSummary>,
     pub slugs: Vec<SlugRecord>,
     pub languages: Vec<LanguageRecord>,
+    pub settings: BlogSettings,
     pub default_language: String,
     pub imported_unix_seconds: u64,
 }

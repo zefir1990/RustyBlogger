@@ -50,6 +50,8 @@ pub struct ImportCommand {
         default_value = "ru,en,zh,de,ja,fr,es,pt,hi"
     )]
     pub languages: Vec<String>,
+    #[arg(long, default_value_t = 10)]
+    pub posts_per_page: usize,
     #[arg(long)]
     pub strict: bool,
 }

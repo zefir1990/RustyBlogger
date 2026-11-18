@@ -13,7 +13,7 @@ use tower_http::services::ServeDir;
 use tower_http::trace::TraceLayer;
 use tracing::error;
 
-use crate::model::{LanguageRecord, PostRecord, PostSummary};
+use crate::model::{BlogSettings, LanguageRecord, PostRecord, PostSummary};
 use crate::storage::{BlogRepository, RedbPostStore};
 use crate::templates::{self, HomeItem, HomePage, MessagePage, PostPage};
 
@@ -33,11 +33,13 @@ struct AppState {
     site_title: Arc<str>,
     default_language: Arc<str>,
     languages: Arc<Vec<LanguageRecord>>,
+    settings: BlogSettings,
 }
 
 #[derive(Debug, Default, Deserialize)]
 struct LanguageQuery {
     lang: Option<String>,
+    page: Option<usize>,
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -117,11 +119,13 @@ pub async fn serve(options: ServeOptions) -> Result<()> {
         let default_language_record = languages.remove(default_index);
         languages.insert(0, default_language_record);
     }
+    let settings = repository.settings()?;
     let state = AppState {
         repository,
         site_title: Arc::from(options.site_title),
         default_language: Arc::from(default_language),
         languages: Arc::new(languages),
+        settings,
     };
     let router = Router::new()
         .route("/", get(home))
@@ -151,7 +155,7 @@ async fn home(
     headers: HeaderMap,
 ) -> Result<Response, AppError> {
     let selected_language = resolve_language(&state, &query, &headers);
-    let page = build_home_page(&state, &selected_language, None)?;
+    let page = build_home_page(&state, &selected_language, None, query.page)?;
     Ok(Html(templates::render_home(&page)).into_response())
 }
 
@@ -162,7 +166,7 @@ async fn category_page(
     headers: HeaderMap,
 ) -> Result<Response, AppError> {
     let selected_language = resolve_language(&state, &query, &headers);
-    let page = build_home_page(&state, &selected_language, Some(&category))?;
+    let page = build_home_page(&state, &selected_language, Some(&category), query.page)?;
     Ok(Html(templates::render_home(&page)).into_response())
 }
 
@@ -243,7 +247,7 @@ async fn api_posts(
     let posts = items
         .into_iter()
         .map(|item| ApiPostSummary {
-            summary: item.summary,
+            summary: item.post.summary(),
             languages: item.languages,
             requested_language: requested_language.clone(),
             is_fallback: item.is_fallback,
@@ -315,20 +319,35 @@ fn build_home_page(
     state: &AppState,
     selected_language: &str,
     category: Option<&str>,
+    requested_page: Option<usize>,
 ) -> Result<HomePage, AppError> {
     let items = collect_home_items(state, selected_language, category)?;
+    let total_items = items.len();
+    let posts_per_page = state.settings.posts_per_page.max(1);
+    let total_pages = total_items.div_ceil(posts_per_page).max(1);
+    let current_page = requested_page.unwrap_or(1).clamp(1, total_pages);
     let has_requested_language_post = items.iter().any(|item| !item.is_fallback);
     let fallback_to_default = !items.is_empty()
         && !has_requested_language_post
         && selected_language != &*state.default_language;
+    let page_start = (current_page - 1) * posts_per_page;
+    let page_items: Vec<HomeItem> = items
+        .into_iter()
+        .skip(page_start)
+        .take(posts_per_page)
+        .collect();
     Ok(HomePage {
         site_title: state.site_title.as_ref().to_string(),
         selected_language: selected_language.to_string(),
         default_language: state.default_language.as_ref().to_string(),
         languages: (*state.languages).clone(),
-        items,
+        items: page_items,
         category: category.map(str::to_string),
         fallback_to_default,
+        posts_per_page,
+        current_page,
+        total_pages,
+        total_items,
     })
 }
 
@@ -348,14 +367,14 @@ fn collect_home_items(
         } else {
             slug_record.default_language.clone()
         };
-        let Some(summary) = state
+        let Some(post) = state
             .repository
-            .get_summary(&slug_record.slug, &item_language)?
+            .get_post(&slug_record.slug, &item_language)?
         else {
             continue;
         };
         if let Some(category) = category {
-            if !summary
+            if !post
                 .categories
                 .iter()
                 .any(|post_category| post_category.as_str() == category)
@@ -365,16 +384,16 @@ fn collect_home_items(
         }
         items.push(HomeItem {
             is_fallback: item_language.as_str() != selected_language,
-            summary,
+            post,
             languages: slug_record.languages,
         });
     }
     items.sort_by(|left, right| {
         right
-            .summary
+            .post
             .modified_unix_seconds
-            .cmp(&left.summary.modified_unix_seconds)
-            .then_with(|| left.summary.title.cmp(&right.summary.title))
+            .cmp(&left.post.modified_unix_seconds)
+            .then_with(|| left.post.title.cmp(&right.post.title))
     });
     Ok(items)
 }

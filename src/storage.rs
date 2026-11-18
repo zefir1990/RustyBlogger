@@ -4,18 +4,21 @@ use std::path::Path;
 use anyhow::{Context, Result};
 use redb::{Database, ReadableTable, TableDefinition};
 
-use crate::model::{BlogSnapshot, LanguageRecord, PostRecord, PostSummary, SlugRecord};
+use crate::model::{
+    BlogSettings, BlogSnapshot, LanguageRecord, PostRecord, PostSummary, SlugRecord,
+};
 
 const POSTS_TABLE: TableDefinition<&str, &str> = TableDefinition::new("posts");
-const SUMMARIES_TABLE: TableDefinition<&str, &str> = TableDefinition::new("summaries");
 const SLUGS_TABLE: TableDefinition<&str, &str> = TableDefinition::new("slugs");
 const LANGUAGE_INDEX_TABLE: TableDefinition<&str, &str> = TableDefinition::new("language_index");
 const LANGUAGES_TABLE: TableDefinition<&str, &str> = TableDefinition::new("languages");
 const METADATA_TABLE: TableDefinition<&str, &str> = TableDefinition::new("metadata");
+const SETTINGS_TABLE: TableDefinition<&str, &str> = TableDefinition::new("settings");
 
 const VARIANT_SEPARATOR: char = '\u{1f}';
 const DEFAULT_LANGUAGE_KEY: &str = "default_language";
 const IMPORTED_AT_KEY: &str = "imported_unix_seconds";
+const BLOG_SETTINGS_KEY: &str = "blog_settings";
 
 pub trait BlogRepository: Send + Sync {
     fn list_languages(&self) -> Result<Vec<LanguageRecord>>;
@@ -23,8 +26,8 @@ pub trait BlogRepository: Send + Sync {
     fn list_slugs(&self) -> Result<Vec<SlugRecord>>;
     fn get_slug(&self, slug: &str) -> Result<Option<SlugRecord>>;
     fn get_post(&self, slug: &str, language: &str) -> Result<Option<PostRecord>>;
-    fn get_summary(&self, slug: &str, language: &str) -> Result<Option<PostSummary>>;
     fn list_posts(&self, language: &str) -> Result<Vec<PostSummary>>;
+    fn settings(&self) -> Result<BlogSettings>;
     fn check_health(&self) -> Result<()>;
 }
 
@@ -50,11 +53,11 @@ impl RedbPostStore {
             let write_transaction = database.begin_write()?;
             {
                 write_transaction.open_table(POSTS_TABLE)?;
-                write_transaction.open_table(SUMMARIES_TABLE)?;
                 write_transaction.open_table(SLUGS_TABLE)?;
                 write_transaction.open_table(LANGUAGE_INDEX_TABLE)?;
                 write_transaction.open_table(LANGUAGES_TABLE)?;
                 write_transaction.open_table(METADATA_TABLE)?;
+                write_transaction.open_table(SETTINGS_TABLE)?;
             }
             write_transaction.commit()?;
         }
@@ -65,26 +68,23 @@ impl RedbPostStore {
         let write_transaction = self.database.begin_write()?;
         {
             write_transaction.delete_table(POSTS_TABLE)?;
-            write_transaction.delete_table(SUMMARIES_TABLE)?;
             write_transaction.delete_table(SLUGS_TABLE)?;
             write_transaction.delete_table(LANGUAGE_INDEX_TABLE)?;
             write_transaction.delete_table(LANGUAGES_TABLE)?;
             write_transaction.delete_table(METADATA_TABLE)?;
+            write_transaction.delete_table(SETTINGS_TABLE)?;
             let mut posts_table = write_transaction.open_table(POSTS_TABLE)?;
-            let mut summaries_table = write_transaction.open_table(SUMMARIES_TABLE)?;
             let mut slugs_table = write_transaction.open_table(SLUGS_TABLE)?;
             let mut language_index_table = write_transaction.open_table(LANGUAGE_INDEX_TABLE)?;
             let mut languages_table = write_transaction.open_table(LANGUAGES_TABLE)?;
             let mut metadata_table = write_transaction.open_table(METADATA_TABLE)?;
+            let mut settings_table = write_transaction.open_table(SETTINGS_TABLE)?;
             for post in &snapshot.posts {
                 let key = variant_key(&post.slug, &post.language);
                 let serialized_post = serde_json::to_string(post)?;
                 posts_table.insert(key.as_str(), serialized_post.as_str())?;
             }
             for summary in &snapshot.summaries {
-                let key = variant_key(&summary.slug, &summary.language);
-                let serialized_summary = serde_json::to_string(summary)?;
-                summaries_table.insert(key.as_str(), serialized_summary.as_str())?;
                 let index_key = language_index_key(&summary.language, &summary.slug);
                 let serialized_index_summary = serde_json::to_string(summary)?;
                 language_index_table
@@ -101,6 +101,8 @@ impl RedbPostStore {
             metadata_table.insert(DEFAULT_LANGUAGE_KEY, snapshot.default_language.as_str())?;
             let imported_at = snapshot.imported_unix_seconds.to_string();
             metadata_table.insert(IMPORTED_AT_KEY, imported_at.as_str())?;
+            let serialized_settings = serde_json::to_string(&snapshot.settings)?;
+            settings_table.insert(BLOG_SETTINGS_KEY, serialized_settings.as_str())?;
         }
         write_transaction.commit()?;
         Ok(())
@@ -159,16 +161,6 @@ impl BlogRepository for RedbPostStore {
         }
     }
 
-    fn get_summary(&self, slug: &str, language: &str) -> Result<Option<PostSummary>> {
-        let read_transaction = self.database.begin_read()?;
-        let table = read_transaction.open_table(SUMMARIES_TABLE)?;
-        let key = variant_key(slug, language);
-        match table.get(key.as_str())? {
-            Some(value) => Ok(Some(serde_json::from_str(value.value())?)),
-            None => Ok(None),
-        }
-    }
-
     fn list_posts(&self, language: &str) -> Result<Vec<PostSummary>> {
         let read_transaction = self.database.begin_read()?;
         let table = read_transaction.open_table(LANGUAGE_INDEX_TABLE)?;
@@ -190,9 +182,19 @@ impl BlogRepository for RedbPostStore {
         Ok(summaries)
     }
 
+    fn settings(&self) -> Result<BlogSettings> {
+        let read_transaction = self.database.begin_read()?;
+        let table = read_transaction.open_table(SETTINGS_TABLE)?;
+        match table.get(BLOG_SETTINGS_KEY)? {
+            Some(value) => Ok(serde_json::from_str(value.value())?),
+            None => Ok(BlogSettings::default()),
+        }
+    }
+
     fn check_health(&self) -> Result<()> {
         let read_transaction = self.database.begin_read()?;
         let _ = read_transaction.open_table(METADATA_TABLE)?;
+        let _ = read_transaction.open_table(SETTINGS_TABLE)?;
         Ok(())
     }
 }
