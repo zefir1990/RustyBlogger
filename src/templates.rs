@@ -238,8 +238,16 @@ time { font-variant-numeric: tabular-nums; }
 }
 .post-body p { margin: 0.9rem 0; }
 .post-body figure { margin: 1.4rem 0; }
-.post-body img, .post-body iframe, .post-body video {
-  width: 100%;
+.post-body img {
+  display: block;
+  width: auto;
+  max-width: 100%;
+  height: auto;
+  border-radius: 14px;
+  border: 1px solid var(--border);
+}
+.post-body iframe, .post-body video {
+  max-width: 100%;
   height: auto;
   border-radius: 14px;
   border: 1px solid var(--border);
