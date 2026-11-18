@@ -646,7 +646,7 @@ fn render_layout(
     let mut html = String::new();
     let _ = write!(
         html,
-        "<!doctype html><html lang=\"{}\"><head><meta charset=\"utf-8\"/><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"/><title>{}</title><link rel=\"stylesheet\" href=\"/assets/style.css\"/></head><body><header class=\"site-header\"><a class=\"site-title\" href=\"/\">{}</a><nav class=\"language-switcher\" aria-label=\"Language\">",
+        "<!doctype html><html lang=\"{}\"><head><meta charset=\"utf-8\"/><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"/><base target=\"_blank\"/><title>{}</title><link rel=\"stylesheet\" href=\"/assets/style.css\"/></head><body><header class=\"site-header\"><a class=\"site-title\" href=\"/\">{}</a><nav class=\"language-switcher\" aria-label=\"Language\">",
         escape_html(selected_language),
         escape_html(site_title),
         escape_html(site_title)
@@ -687,7 +687,7 @@ fn render_layout(
     }
     let _ = write!(
         html,
-        "</nav></header><main>{content}</main><footer><p>Powered by <a href=\"https://github.com/zefir1990/RustyBlogger\" rel=\"noopener\" target=\"_blank\">RustyBlogger</a> and <a href=\"https://github.com/cberner/redb\" rel=\"noopener\" target=\"_blank\">redb</a></p></footer>"
+        "</nav></header><main>{content}</main><footer><p>Powered by <a href=\"https://github.com/zefir1990/RustyBlogger\" rel=\"noopener\" target=\"_blank\">RustyBlogger</a> and <a href=\"https://github.com/cberner/redb\" rel=\"noopener\" target=\"_blank\">redb</a></p><p>Blog by <a href=\"https://zefir1990.space/posts/zefir1990\">zefir1990.space/posts/zefir1990</a></p></footer>"
     );
     let warning = gdpr_warning_text(selected_language);
     let _ = write!(
