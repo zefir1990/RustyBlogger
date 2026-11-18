@@ -428,7 +428,12 @@ pub struct MessagePage {
 pub fn render_home(page: &HomePage) -> String {
     let mut content = String::new();
     if let Some(category) = &page.category {
-        let _ = write!(content, "<h1>Posts in {}</h1>", escape_html(category));
+        let localized_category = category_label(category, &page.selected_language);
+        let _ = write!(
+            content,
+            "<h1>Posts in {}</h1>",
+            escape_html(&localized_category)
+        );
     }
     if page.fallback_to_default {
         let _ = write!(
@@ -456,12 +461,13 @@ pub fn render_home(page: &HomePage) -> String {
                 escape_html(&post.title)
             );
             for category in &post.categories {
+                let localized_category = category_label(category, &page.selected_language);
                 let _ = write!(
                     content,
                     "<a class=\"badge category\" href=\"/category/{}?lang={}\">{}</a>",
                     urlencoding::encode(category),
                     urlencoding::encode(&page.selected_language),
-                    escape_html(category)
+                    escape_html(&localized_category)
                 );
             }
             for language in &item.languages {
@@ -572,12 +578,13 @@ pub fn render_post(page: &PostPage) -> String {
         escape_html(&page.post.title)
     );
     for category in &page.post.categories {
+        let localized_category = category_label(category, &page.selected_language);
         let _ = write!(
             content,
             "<a class=\"badge category\" href=\"/category/{}?lang={}\">{}</a>",
             urlencoding::encode(category),
             urlencoding::encode(&page.selected_language),
-            escape_html(category)
+            escape_html(&localized_category)
         );
     }
     let post_date = if page.post.published_date.is_empty() {
@@ -739,6 +746,42 @@ fn gdpr_warning_text(language: &str) -> GdprWarningText {
             message: "This site uses a functional cookie to remember your language choice and local storage to hide this notice. No tracking data is stored.",
             dismiss_label: "Got it",
         },
+    }
+}
+
+fn category_label(category: &str, language: &str) -> String {
+    let normalized_category = category.trim().to_ascii_lowercase();
+    let localized_category = match (normalized_category.as_str(), language) {
+        ("software", "ru") => "Софт",
+        ("notes", "ru") => "Заметки",
+        ("software", "zh") => "软件",
+        ("notes", "zh") => "笔记",
+        ("software", "de") => "Software",
+        ("notes", "de") => "Notizen",
+        ("software", "ja") => "ソフトウェア",
+        ("notes", "ja") => "メモ",
+        ("software", "fr") => "Logiciel",
+        ("notes", "fr") => "Notes",
+        ("software", "es") => "Software",
+        ("notes", "es") => "Notas",
+        ("software", "pt") => "Software",
+        ("notes", "pt") => "Notas",
+        ("software", "hi") => "सॉफ़्टवेयर",
+        ("notes", "hi") => "नोट्स",
+        ("software", _) => "Software",
+        ("notes", _) => "Notes",
+        _ => return capitalize_first(category),
+    };
+    localized_category.to_string()
+}
+
+fn capitalize_first(value: &str) -> String {
+    let mut characters = value.chars();
+    match characters.next() {
+        Some(first_character) => {
+            first_character.to_uppercase().collect::<String>() + characters.as_str()
+        }
+        None => String::new(),
     }
 }
 
