@@ -73,6 +73,24 @@ Options:
 - `--posts-per-page` — page size stored in `redb`, default `10`
 - `--site-title` — site title stored in `BlogSettings`, default `Zefir1990`
 
+### Import WordPress localizations
+
+Fetch every language for one post from `demensdeum.com/blog` and merge the localizations into `redb`:
+
+```bash
+tools/import-localizations --slug strata-local-ai --database blog.redb
+```
+
+Stop the server before running it; `redb` allows only one process to write the database. Existing title/body variants are updated, missing languages are added, and existing dates/categories are preserved for variants already present. Remote images keep their WordPress URLs.
+
+Options:
+
+- `--slug` — post slug to import, required
+- `--database` — database path, default `blog.redb`
+- `--base-url` — WordPress base URL, default `https://demensdeum.com/blog`
+- `--wordpress-default-language` — language without a URL prefix, default `en`
+- `--languages` — comma-separated languages, default `en,ru,zh,de,ja,fr,es,pt,hi`
+
 ### Serve
 
 ```bash

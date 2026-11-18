@@ -8,15 +8,19 @@ mod render;
 mod storage;
 mod templates;
 mod web;
+mod wordpress;
 
 use anyhow::{bail, Result};
 use clap::Parser;
 use tracing_subscriber::EnvFilter;
 
-use crate::cli::{Cli, Command, ImportCommand, ServeCommand, ValidateCommand};
+use crate::cli::{
+    Cli, Command, ImportCommand, ImportWordpressCommand, ServeCommand, ValidateCommand,
+};
 use crate::importer::{build_snapshot, SnapshotOptions};
 use crate::storage::RedbPostStore;
 use crate::web::{serve, ServeOptions};
+use crate::wordpress::{import_localizations, WordPressImportOptions};
 
 #[tokio::main]
 async fn main() {
@@ -29,6 +33,7 @@ async fn main() {
     let result = match cli.command {
         Command::Validate(command) => run_validate(command),
         Command::Import(command) => run_import(command),
+        Command::ImportWordpress(command) => run_import_wordpress(command),
         Command::Serve(command) => run_serve(command).await,
     };
     match result {
@@ -90,6 +95,17 @@ fn run_import(command: ImportCommand) -> Result<i32> {
         snapshot.languages.len(),
         command.database.display()
     );
+    Ok(0)
+}
+
+fn run_import_wordpress(command: ImportWordpressCommand) -> Result<i32> {
+    import_localizations(&WordPressImportOptions {
+        base_url: &command.base_url,
+        database: &command.database,
+        slug: &command.slug,
+        languages: &command.languages,
+        wordpress_default_language: &command.wordpress_default_language,
+    })?;
     Ok(0)
 }
 

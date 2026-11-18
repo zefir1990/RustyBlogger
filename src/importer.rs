@@ -1,16 +1,12 @@
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::time::{SystemTime, UNIX_EPOCH};
 
 use anyhow::{Context, Result};
 
 use crate::date::format_unix_date;
 use crate::git_history::first_commit_dates;
-use crate::model::{
-    BlogSettings, BlogSnapshot, ImportReport, LanguageRecord, PostRecord, PostSummary, SlugRecord,
-    ValidationIssue,
-};
+use crate::model::{BlogSettings, BlogSnapshot, ImportReport, PostRecord, ValidationIssue};
 use crate::parser::{is_valid_language_code, parse_post_file};
 
 pub struct SnapshotOptions<'a> {
@@ -132,14 +128,10 @@ pub fn build_snapshot(options: &SnapshotOptions<'_>) -> Result<(BlogSnapshot, Im
         }
     }
     let mut language_counts: BTreeMap<String, usize> = BTreeMap::new();
-    let mut languages_by_slug: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
     for post in &posts {
         *language_counts.entry(post.language.clone()).or_default() += 1;
-        languages_by_slug
-            .entry(post.slug.clone())
-            .or_default()
-            .insert(post.language.clone());
     }
+    let mut valid_configured_languages = Vec::new();
     for configured_language in &options.configured_languages {
         let normalized_language = configured_language.trim().to_ascii_lowercase();
         if normalized_language.is_empty() {
@@ -155,7 +147,10 @@ pub fn build_snapshot(options: &SnapshotOptions<'_>) -> Result<(BlogSnapshot, Im
             ));
             continue;
         }
-        language_counts.entry(normalized_language).or_insert(0);
+        language_counts
+            .entry(normalized_language.clone())
+            .or_insert(0);
+        valid_configured_languages.push(normalized_language);
     }
     let default_language = resolve_default_language(
         options.default_language,
@@ -163,57 +158,16 @@ pub fn build_snapshot(options: &SnapshotOptions<'_>) -> Result<(BlogSnapshot, Im
         options.posts_directory,
         &mut report,
     );
-    let mut languages: Vec<LanguageRecord> = language_counts
-        .into_iter()
-        .map(|(code, post_count)| LanguageRecord { code, post_count })
-        .collect();
-    languages.sort_by(|left, right| compare_languages(left, right, &default_language));
-    let mut slugs = Vec::new();
-    for (slug, language_set) in languages_by_slug {
-        let mut slug_languages: Vec<String> = language_set.into_iter().collect();
-        let slug_default_language = if slug_languages.contains(&default_language) {
-            default_language.clone()
-        } else {
-            slug_languages.first().cloned().unwrap_or_default()
-        };
-        let default_language_reference = slug_default_language.clone();
-        slug_languages.sort_by(|left, right| {
-            (left != &default_language_reference, left)
-                .cmp(&(right != &default_language_reference, right))
-        });
-        slugs.push(SlugRecord {
-            slug,
-            languages: slug_languages,
-            default_language: slug_default_language,
-        });
-    }
-    posts.sort_by(|left, right| {
-        right
-            .published_unix_seconds
-            .cmp(&left.published_unix_seconds)
-            .then_with(|| left.slug.cmp(&right.slug))
-    });
-    let summaries: Vec<PostSummary> = posts.iter().map(PostRecord::summary).collect();
-    let imported_unix_seconds = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|duration| duration.as_secs())
-        .unwrap_or(0);
-    Ok((
-        BlogSnapshot {
-            posts,
-            summaries,
-            slugs,
-            languages,
-            settings: BlogSettings {
-                posts_per_page: options.posts_per_page,
-                title: options.site_title.clone(),
-            }
-            .normalized(),
-            default_language,
-            imported_unix_seconds,
+    let snapshot = BlogSnapshot::from_posts(
+        posts,
+        &valid_configured_languages,
+        default_language,
+        BlogSettings {
+            posts_per_page: options.posts_per_page,
+            title: options.site_title.clone(),
         },
-        report,
-    ))
+    );
+    Ok((snapshot, report))
 }
 
 fn resolve_default_language(
@@ -236,12 +190,4 @@ fn resolve_default_language(
         return first_language.clone();
     }
     requested_default_language.to_string()
-}
-
-fn compare_languages(
-    left: &LanguageRecord,
-    right: &LanguageRecord,
-    default_language: &str,
-) -> std::cmp::Ordering {
-    (left.code != default_language, &left.code).cmp(&(right.code != default_language, &right.code))
 }

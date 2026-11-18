@@ -31,9 +31,11 @@ target/release/rustyblogger serve \
   --database blog.redb \
   --media-directory /Users/zefir1990/Sources/blog/media \
   --bind-address 127.0.0.1:8080
+
+tools/import-localizations --slug strata-local-ai --database blog.redb
 ```
 
-`validate --strict` fails on warnings. Import aborts on errors; warnings are tolerated unless `--strict` is passed. Import also accepts `--posts-per-page`, `--site-title`, `--languages`, and `--default-language`.
+`import-localizations` requires the server to be stopped because `redb` is single-writer. `validate --strict` fails on warnings. Import aborts on errors; warnings are tolerated unless `--strict` is passed. Import also accepts `--posts-per-page`, `--site-title`, `--languages`, and `--default-language`.
 
 ## Architecture
 
@@ -48,6 +50,8 @@ target/release/rustyblogger serve \
 | `src/storage.rs` | `BlogRepository` trait and `redb` implementation |
 | `src/web.rs` | Axum routes, language resolution, pagination |
 | `src/templates.rs` | HTML layout, post pages, home page, pagination, CSS |
+| `src/wordpress.rs` | WordPress localization import by post slug |
+| `tools/import-localizations` | Wrapper for `import-wordpress` |
 
 Keep storage behind `BlogRepository`. Parsing and rendering must stay independent of HTTP and database code. Prefer small focused functions and explicit names.
 

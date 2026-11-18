@@ -1,5 +1,7 @@
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 use std::path::PathBuf;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
 
@@ -184,6 +186,78 @@ pub struct BlogSnapshot {
     pub settings: BlogSettings,
     pub default_language: String,
     pub imported_unix_seconds: u64,
+}
+
+impl BlogSnapshot {
+    pub fn from_posts(
+        mut posts: Vec<PostRecord>,
+        configured_languages: &[String],
+        default_language: String,
+        settings: BlogSettings,
+    ) -> Self {
+        let mut language_counts: BTreeMap<String, usize> = BTreeMap::new();
+        let mut languages_by_slug: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
+        for post in &posts {
+            *language_counts.entry(post.language.clone()).or_default() += 1;
+            languages_by_slug
+                .entry(post.slug.clone())
+                .or_default()
+                .insert(post.language.clone());
+        }
+        for configured_language in configured_languages {
+            let normalized_language = configured_language.trim().to_ascii_lowercase();
+            if !normalized_language.is_empty() {
+                language_counts.entry(normalized_language).or_insert(0);
+            }
+        }
+        let mut languages: Vec<LanguageRecord> = language_counts
+            .into_iter()
+            .map(|(code, post_count)| LanguageRecord { code, post_count })
+            .collect();
+        languages.sort_by(|left, right| {
+            (left.code != default_language, &left.code)
+                .cmp(&(right.code != default_language, &right.code))
+        });
+        let mut slugs = Vec::new();
+        for (slug, language_set) in languages_by_slug {
+            let mut slug_languages: Vec<String> = language_set.into_iter().collect();
+            let slug_default_language = if slug_languages.contains(&default_language) {
+                default_language.clone()
+            } else {
+                slug_languages.first().cloned().unwrap_or_default()
+            };
+            let default_language_reference = slug_default_language.clone();
+            slug_languages.sort_by(|left, right| {
+                (left != &default_language_reference, left)
+                    .cmp(&(right != &default_language_reference, right))
+            });
+            slugs.push(SlugRecord {
+                slug,
+                languages: slug_languages,
+                default_language: slug_default_language,
+            });
+        }
+        posts.sort_by(|left, right| {
+            right
+                .published_unix_seconds
+                .cmp(&left.published_unix_seconds)
+                .then_with(|| left.slug.cmp(&right.slug))
+        });
+        let summaries: Vec<PostSummary> = posts.iter().map(PostRecord::summary).collect();
+        let imported_unix_seconds = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|duration| duration.as_secs())
+            .unwrap_or(0);
+        Self {
+            posts,
+            summaries,
+            slugs,
+            languages,
+            settings: settings.normalized(),
+            default_language,
+            imported_unix_seconds,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Default)]

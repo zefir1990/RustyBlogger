@@ -17,6 +17,7 @@ pub struct Cli {
 pub enum Command {
     Validate(ValidateCommand),
     Import(ImportCommand),
+    ImportWordpress(ImportWordpressCommand),
     Serve(ServeCommand),
 }
 
@@ -56,6 +57,24 @@ pub struct ImportCommand {
     pub site_title: String,
     #[arg(long)]
     pub strict: bool,
+}
+
+#[derive(Debug, Args)]
+pub struct ImportWordpressCommand {
+    #[arg(long)]
+    pub slug: String,
+    #[arg(long, default_value = "blog.redb")]
+    pub database: PathBuf,
+    #[arg(long, default_value = "https://demensdeum.com/blog")]
+    pub base_url: String,
+    #[arg(long, default_value = "en")]
+    pub wordpress_default_language: String,
+    #[arg(
+        long,
+        value_delimiter = ',',
+        default_value = "en,ru,zh,de,ja,fr,es,pt,hi"
+    )]
+    pub languages: Vec<String>,
 }
 
 #[derive(Debug, Args)]
