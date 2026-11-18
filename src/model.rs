@@ -143,12 +143,26 @@ pub struct LanguageRecord {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BlogSettings {
+    #[serde(default = "default_posts_per_page")]
     pub posts_per_page: usize,
+    #[serde(default = "default_site_title")]
+    pub title: String,
+}
+
+fn default_posts_per_page() -> usize {
+    10
+}
+
+fn default_site_title() -> String {
+    "Zefir1990".to_string()
 }
 
 impl Default for BlogSettings {
     fn default() -> Self {
-        Self { posts_per_page: 10 }
+        Self {
+            posts_per_page: default_posts_per_page(),
+            title: default_site_title(),
+        }
     }
 }
 
@@ -156,6 +170,7 @@ impl BlogSettings {
     pub fn normalized(self) -> Self {
         Self {
             posts_per_page: self.posts_per_page.max(1),
+            title: self.title,
         }
     }
 }

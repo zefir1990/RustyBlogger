@@ -48,6 +48,7 @@ fn run_validate(command: ValidateCommand) -> Result<i32> {
         default_language: &command.source.default_language,
         configured_languages: Vec::new(),
         posts_per_page: 10,
+        site_title: "Zefir1990".to_string(),
     };
     let (_, report) = build_snapshot(&snapshot_options)?;
     report.print();
@@ -65,6 +66,7 @@ fn run_import(command: ImportCommand) -> Result<i32> {
         default_language: &command.source.default_language,
         configured_languages: command.languages,
         posts_per_page: command.posts_per_page,
+        site_title: command.site_title,
     };
     let (snapshot, report) = build_snapshot(&snapshot_options)?;
     report.print();

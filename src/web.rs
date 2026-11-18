@@ -24,7 +24,7 @@ pub struct ServeOptions {
     pub database_path: PathBuf,
     pub media_directory: PathBuf,
     pub bind_address: String,
-    pub site_title: String,
+    pub site_title: Option<String>,
 }
 
 #[derive(Clone)]
@@ -120,9 +120,13 @@ pub async fn serve(options: ServeOptions) -> Result<()> {
         languages.insert(0, default_language_record);
     }
     let settings = repository.settings()?;
+    let site_title = options
+        .site_title
+        .filter(|title| !title.trim().is_empty())
+        .unwrap_or_else(|| settings.title.clone());
     let state = AppState {
         repository,
-        site_title: Arc::from(options.site_title),
+        site_title: Arc::from(site_title),
         default_language: Arc::from(default_language),
         languages: Arc::new(languages),
         settings,

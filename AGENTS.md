@@ -30,11 +30,10 @@ target/release/rustyblogger import \
 target/release/rustyblogger serve \
   --database blog.redb \
   --media-directory /Users/zefir1990/Sources/blog/media \
-  --bind-address 127.0.0.1:8080 \
-  --site-title DemensDeum
+  --bind-address 127.0.0.1:8080
 ```
 
-`validate --strict` fails on warnings. Import aborts on errors; warnings are tolerated unless `--strict` is passed. Import also accepts `--posts-per-page`, `--languages`, and `--default-language`.
+`validate --strict` fails on warnings. Import aborts on errors; warnings are tolerated unless `--strict` is passed. Import also accepts `--posts-per-page`, `--site-title`, `--languages`, and `--default-language`.
 
 ## Architecture
 
@@ -63,7 +62,7 @@ Keep storage behind `BlogRepository`. Parsing and rendering must stay independen
 - `metadata` — default language and import timestamp
 - `settings` — key `blog_settings` to serialized `BlogSettings`
 
-`BlogSettings` currently contains `posts_per_page`, default `10`. The home page reads pagination settings from the database.
+`BlogSettings` currently contains `posts_per_page` (default `10`) and `title` (default `Zefir1990`). The home page reads pagination settings from the database, and the server reads the site title from settings unless `--site-title` is passed.
 
 Generated `*.redb` files are gitignored.
 

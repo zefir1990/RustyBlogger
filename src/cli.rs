@@ -52,6 +52,8 @@ pub struct ImportCommand {
     pub languages: Vec<String>,
     #[arg(long, default_value_t = 10)]
     pub posts_per_page: usize,
+    #[arg(long, default_value = "Zefir1990")]
+    pub site_title: String,
     #[arg(long)]
     pub strict: bool,
 }
@@ -64,6 +66,6 @@ pub struct ServeCommand {
     pub media_directory: PathBuf,
     #[arg(long, default_value = "127.0.0.1:8080")]
     pub bind_address: String,
-    #[arg(long, default_value = "RustyBlogger")]
-    pub site_title: String,
+    #[arg(long)]
+    pub site_title: Option<String>,
 }

@@ -36,11 +36,10 @@ target/release/rustyblogger import \
 target/release/rustyblogger serve \
   --database blog.redb \
   --media-directory /Users/zefir1990/Sources/blog/media \
-  --bind-address 127.0.0.1:8080 \
-  --site-title DemensDeum
+  --bind-address 127.0.0.1:8080
 ```
 
-Open http://127.0.0.1:8080.
+Open http://127.0.0.1:8080. The site title is read from `BlogSettings.title` in `redb`; `--site-title` on `serve` can override it.
 
 ## Commands
 
@@ -71,6 +70,7 @@ Options:
 - `--default-language` — source language, default `ru`
 - `--languages` — comma-separated language list for the switcher, default `ru,en,zh,de,ja,fr,es,pt,hi`
 - `--posts-per-page` — page size stored in `redb`, default `10`
+- `--site-title` — site title stored in `BlogSettings`, default `Zefir1990`
 
 ### Serve
 
@@ -78,8 +78,7 @@ Options:
 target/release/rustyblogger serve \
   --database blog.redb \
   --media-directory /Users/zefir1990/Sources/blog/media \
-  --bind-address 127.0.0.1:8080 \
-  --site-title RustyBlogger
+  --bind-address 127.0.0.1:8080
 ```
 
 ## Routes

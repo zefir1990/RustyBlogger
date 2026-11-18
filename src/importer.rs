@@ -19,6 +19,7 @@ pub struct SnapshotOptions<'a> {
     pub default_language: &'a str,
     pub configured_languages: Vec<String>,
     pub posts_per_page: usize,
+    pub site_title: String,
 }
 
 pub fn build_snapshot(options: &SnapshotOptions<'_>) -> Result<(BlogSnapshot, ImportReport)> {
@@ -205,6 +206,7 @@ pub fn build_snapshot(options: &SnapshotOptions<'_>) -> Result<(BlogSnapshot, Im
             languages,
             settings: BlogSettings {
                 posts_per_page: options.posts_per_page,
+                title: options.site_title.clone(),
             }
             .normalized(),
             default_language,
