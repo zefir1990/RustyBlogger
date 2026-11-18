@@ -107,7 +107,7 @@ pub async fn serve(options: ServeOptions) -> Result<()> {
     let mut languages = repository.list_languages()?;
     if languages.is_empty() {
         bail!(
-            "database {} contains no posts, run the import command first",
+            "database {} contains no posts",
             options.database_path.display()
         );
     }

@@ -1,9 +1,0 @@
-#!/usr/bin/env bash
-set -euo pipefail
-script_directory="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-repository_root="$(cd "$script_directory/.." && pwd)"
-binary="${RUSTYBLOGGER_BINARY:-$repository_root/target/release/rustyblogger}"
-if [[ ! -x "$binary" ]]; then
-  cargo build --release --manifest-path "$repository_root/Cargo.toml"
-fi
-exec "$binary" import-wordpress "$@"

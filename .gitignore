@@ -26,7 +26,3 @@ rustc-ice-*.txt
 # RustyBlogger database files
 *.redb
 *.redb.lock
-
-# Bulk WordPress import progress
-tools/import-progress.txt
-tools/import-progress.failed.txt
