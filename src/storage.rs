@@ -175,8 +175,8 @@ impl BlogRepository for RedbPostStore {
         }
         summaries.sort_by(|left, right| {
             right
-                .modified_unix_seconds
-                .cmp(&left.modified_unix_seconds)
+                .published_unix_seconds
+                .cmp(&left.published_unix_seconds)
                 .then_with(|| left.slug.cmp(&right.slug))
         });
         Ok(summaries)

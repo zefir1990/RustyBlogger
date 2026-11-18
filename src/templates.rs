@@ -1,5 +1,6 @@
 use std::fmt::Write as _;
 
+use crate::date::format_unix_date;
 use crate::model::{LanguageRecord, PostRecord};
 use crate::render::escape_html;
 
@@ -276,6 +277,12 @@ pub fn render_home(page: &HomePage) -> String {
                     escape_html(&language_label(language))
                 );
             }
+            let post_date = if post.published_date.is_empty() {
+                format_unix_date(post.published_unix_seconds)
+            } else {
+                post.published_date.clone()
+            };
+            let _ = write!(content, "<time datetime=\"{post_date}\">{post_date}</time>");
             if item.is_fallback {
                 content.push_str("<span class=\"badge\">fallback</span>");
             }
@@ -379,9 +386,14 @@ pub fn render_post(page: &PostPage) -> String {
             escape_html(category)
         );
     }
+    let post_date = if page.post.published_date.is_empty() {
+        format_unix_date(page.post.published_unix_seconds)
+    } else {
+        page.post.published_date.clone()
+    };
     let _ = write!(
         content,
-        "<span class=\"badge\">{}</span></div>",
+        "<span class=\"badge\">{}</span><time datetime=\"{post_date}\">{post_date}</time></div>",
         escape_html(&language_label(&page.post.language))
     );
     if page.post.language != page.selected_language {

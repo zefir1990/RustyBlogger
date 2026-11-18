@@ -91,6 +91,7 @@ Rules:
 - An image line contains a filename such as `image.jpg`, or `https://example.com/page/|image.jpg`.
 - `[DO NOT PROCESS LINE]` strips the directive and leaves the remainder untouched.
 - `<RUONLY>...</RUONLY>` renders only for Russian; `<NOTRU>...</NOTRU>` renders only for non-Russian languages.
+- Post dates come from the file's first git commit date (creation date); files without git history fall back to file modification time. Posts are sorted newest first.
 
 Translations use the same `Slug` in another file, for example `ghost-contacts.en.txt` with `Language: en`. The language selector includes the default language list even before translations exist; missing translations fall back to the slug's default language.
 

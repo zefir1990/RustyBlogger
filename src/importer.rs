@@ -5,6 +5,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use anyhow::{Context, Result};
 
+use crate::date::format_unix_date;
+use crate::git_history::first_commit_dates;
 use crate::model::{
     BlogSettings, BlogSnapshot, ImportReport, LanguageRecord, PostRecord, PostSummary, SlugRecord,
     ValidationIssue,
@@ -54,6 +56,17 @@ pub fn build_snapshot(options: &SnapshotOptions<'_>) -> Result<(BlogSnapshot, Im
             "no .txt posts found",
         ));
     }
+    let commit_dates = match first_commit_dates(options.posts_directory) {
+        Ok(commit_dates) => commit_dates,
+        Err(error) => {
+            report.issues.push(ValidationIssue::warning(
+                options.posts_directory,
+                None,
+                format!("{error}; using file modification times"),
+            ));
+            BTreeMap::new()
+        }
+    };
     let mut posts = Vec::new();
     let mut known_sources: BTreeMap<(String, String), PathBuf> = BTreeMap::new();
     for path in post_paths {
@@ -84,7 +97,22 @@ pub fn build_snapshot(options: &SnapshotOptions<'_>) -> Result<(BlogSnapshot, Im
                     .strip_prefix(options.posts_directory)
                     .unwrap_or(path.as_path())
                     .to_string_lossy()
-                    .to_string();
+                    .replace('\\', "/");
+                let (published_unix_seconds, published_date) = match commit_dates.get(&source_path)
+                {
+                    Some(commit_date) => (commit_date.timestamp, commit_date.date.clone()),
+                    None => {
+                        if !commit_dates.is_empty() {
+                            report.issues.push(ValidationIssue::warning(
+                                &path,
+                                None,
+                                "no git creation commit found, using file modification time",
+                            ));
+                        }
+                        let file_timestamp = parsed_post.file_modified_unix_seconds;
+                        (file_timestamp, format_unix_date(file_timestamp))
+                    }
+                };
                 posts.push(PostRecord {
                     slug: parsed_post.metadata.slug,
                     language: parsed_post.metadata.language,
@@ -92,7 +120,8 @@ pub fn build_snapshot(options: &SnapshotOptions<'_>) -> Result<(BlogSnapshot, Im
                     categories: parsed_post.metadata.categories,
                     body_html: parsed_post.body_html,
                     source_path,
-                    modified_unix_seconds: parsed_post.modified_unix_seconds,
+                    published_unix_seconds,
+                    published_date,
                 });
             }
             Err(issues) => {
@@ -159,8 +188,8 @@ pub fn build_snapshot(options: &SnapshotOptions<'_>) -> Result<(BlogSnapshot, Im
     }
     posts.sort_by(|left, right| {
         right
-            .modified_unix_seconds
-            .cmp(&left.modified_unix_seconds)
+            .published_unix_seconds
+            .cmp(&left.published_unix_seconds)
             .then_with(|| left.slug.cmp(&right.slug))
     });
     let summaries: Vec<PostSummary> = posts.iter().map(PostRecord::summary).collect();

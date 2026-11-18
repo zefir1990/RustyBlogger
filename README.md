@@ -6,6 +6,7 @@ Multilingual blog engine written in Rust. It imports WordPress-style `.txt` post
 
 - Fast embedded storage with `redb`
 - Multilingual posts with language switching and fallback
+- Post dates taken from each file's first git commit, newest first
 - Full posts on the home page with pagination
 - Configurable posts per page stored in the database
 - Category pages
@@ -122,6 +123,7 @@ Rules:
 - Standalone links must be on their own line
 - Image lines contain a filename such as `image.jpg`, or `https://example.com/page/|image.jpg`
 - `[DO NOT PROCESS LINE]` strips the directive and leaves the rest untouched
+- The creation date is the file's first git commit date; files without git history fall back to file modification time
 
 ## Translations
 

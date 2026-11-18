@@ -391,8 +391,8 @@ fn collect_home_items(
     items.sort_by(|left, right| {
         right
             .post
-            .modified_unix_seconds
-            .cmp(&left.post.modified_unix_seconds)
+            .published_unix_seconds
+            .cmp(&left.post.published_unix_seconds)
             .then_with(|| left.post.title.cmp(&right.post.title))
     });
     Ok(items)

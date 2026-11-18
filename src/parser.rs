@@ -166,7 +166,7 @@ pub fn parse_post_file(
     Ok(ParsedPost {
         metadata,
         body_html: rendered_body.html,
-        modified_unix_seconds: modified_unix_seconds(path),
+        file_modified_unix_seconds: modified_unix_seconds(path),
         issues,
     })
 }

@@ -89,7 +89,7 @@ pub struct PostMetadata {
 pub struct ParsedPost {
     pub metadata: PostMetadata,
     pub body_html: String,
-    pub modified_unix_seconds: u64,
+    pub file_modified_unix_seconds: u64,
     pub issues: Vec<ValidationIssue>,
 }
 
@@ -101,7 +101,8 @@ pub struct PostRecord {
     pub categories: Vec<String>,
     pub body_html: String,
     pub source_path: String,
-    pub modified_unix_seconds: u64,
+    pub published_unix_seconds: u64,
+    pub published_date: String,
 }
 
 impl PostRecord {
@@ -111,7 +112,8 @@ impl PostRecord {
             language: self.language.clone(),
             title: self.title.clone(),
             categories: self.categories.clone(),
-            modified_unix_seconds: self.modified_unix_seconds,
+            published_unix_seconds: self.published_unix_seconds,
+            published_date: self.published_date.clone(),
         }
     }
 }
@@ -122,7 +124,8 @@ pub struct PostSummary {
     pub language: String,
     pub title: String,
     pub categories: Vec<String>,
-    pub modified_unix_seconds: u64,
+    pub published_unix_seconds: u64,
+    pub published_date: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
