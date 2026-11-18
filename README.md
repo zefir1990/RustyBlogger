@@ -91,6 +91,14 @@ Options:
 - `--wordpress-default-language` — language without a URL prefix, default `en`
 - `--languages` — comma-separated languages, default `en,ru,zh,de,ja,fr,es,pt,hi`
 
+Bulk import all posts with resumable progress:
+
+```bash
+tools/import-all-localizations --database blog.redb
+```
+
+Progress is saved after each successful post in `tools/import-progress.txt`, so rerunning resumes with the next post. Use `--limit N` to cap a run, `--dry-run` to preview, and `--progress` to use a different progress file. Failed posts are listed in `tools/import-progress.failed.txt` and retried on the next run.
+
 ### Serve
 
 ```bash

@@ -1,0 +1,170 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+script_directory="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+repository_root="$(cd "$script_directory/.." && pwd)"
+progress_file="$script_directory/import-progress.txt"
+failed_file="$script_directory/import-progress.failed.txt"
+database="blog.redb"
+base_url="https://demensdeum.com/blog"
+wordpress_default_language="en"
+languages="en,ru,zh,de,ja,fr,es,pt,hi"
+limit=0
+retries=3
+dry_run=false
+
+usage() {
+  cat <<'USAGE'
+Usage: tools/import-all-localizations [options]
+
+Imports WordPress localizations for posts in batches. Progress is saved after
+each successful post, so rerunning resumes with the next post.
+
+Options:
+  --limit N                         posts to import this run, default 0 (all)
+  --database PATH                   redb database, default blog.redb
+  --base-url URL                    WordPress base URL
+  --wordpress-default-language CODE language without URL prefix, default en
+  --languages CODES                 comma-separated languages
+  --progress PATH                   progress file
+  --retries N                       attempts per post, default 3
+  --dry-run                         print posts without importing
+  -h, --help                        show this help
+USAGE
+}
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --limit)
+      limit="$2"
+      shift 2
+      ;;
+    --database)
+      database="$2"
+      shift 2
+      ;;
+    --base-url)
+      base_url="$2"
+      shift 2
+      ;;
+    --wordpress-default-language)
+      wordpress_default_language="$2"
+      shift 2
+      ;;
+    --languages)
+      languages="$2"
+      shift 2
+      ;;
+    --progress)
+      progress_file="$2"
+      shift 2
+      ;;
+    --retries)
+      retries="$2"
+      shift 2
+      ;;
+    --dry-run)
+      dry_run=true
+      shift
+      ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    *)
+      echo "unknown option: $1" >&2
+      usage >&2
+      exit 2
+      ;;
+  esac
+done
+
+if [[ ! "$limit" =~ ^[0-9]+$ ]]; then
+  echo "--limit must be a non-negative integer" >&2
+  exit 2
+fi
+if [[ ! "$retries" =~ ^[1-9][0-9]*$ ]]; then
+  echo "--retries must be a positive integer" >&2
+  exit 2
+fi
+if [[ ! -x "$script_directory/import-localizations" ]]; then
+  echo "missing executable: $script_directory/import-localizations" >&2
+  exit 1
+fi
+
+mkdir -p "$(dirname "$progress_file")"
+touch "$progress_file"
+: > "$failed_file"
+
+post_slugs="$(
+  curl -fsS --retry 3 --retry-delay 2 --max-time 60 \
+    "$base_url/wp-json/wp/v2/posts?per_page=100&_fields=slug" |
+    python3 -c 'import json,sys; print("\n".join(post["slug"] for post in json.load(sys.stdin) if post.get("slug")))'
+)"
+
+if [[ -z "$post_slugs" ]]; then
+  echo "no WordPress posts found at $base_url" >&2
+  exit 1
+fi
+
+available_count="$(printf '%s\n' "$post_slugs" | wc -l | tr -d ' ')"
+already_imported_count="$(grep -c . "$progress_file" || true)"
+imported_count=0
+failure_count=0
+
+echo "WordPress posts: $available_count"
+echo "already imported: $already_imported_count"
+if (( limit == 0 )); then
+  echo "batch size: all"
+else
+  echo "batch size: $limit"
+fi
+echo "progress file: $progress_file"
+
+while IFS= read -r slug; do
+  [[ -z "$slug" ]] && continue
+  if grep -Fxq -- "$slug" "$progress_file"; then
+    continue
+  fi
+  if (( limit > 0 && imported_count >= limit )); then
+    break
+  fi
+  if [[ "$dry_run" == true ]]; then
+    echo "would import: $slug"
+    imported_count=$((imported_count + 1))
+    continue
+  fi
+  success=false
+  for ((attempt = 1; attempt <= retries; attempt++)); do
+    echo "[$((imported_count + 1))/$limit] $slug (attempt $attempt/$retries)"
+    if "$script_directory/import-localizations" \
+      --slug "$slug" \
+      --database "$database" \
+      --base-url "$base_url" \
+      --wordpress-default-language "$wordpress_default_language" \
+      --languages "$languages"; then
+      success=true
+      break
+    fi
+    if (( attempt < retries )); then
+      sleep $((attempt * 2))
+    fi
+  done
+  if [[ "$success" == true ]]; then
+    printf '%s\n' "$slug" >> "$progress_file"
+    imported_count=$((imported_count + 1))
+    echo "saved progress: $slug"
+  else
+    printf '%s\n' "$slug" >> "$failed_file"
+    failure_count=$((failure_count + 1))
+    echo "failed: $slug" >&2
+  fi
+done <<< "$post_slugs"
+
+total_imported="$(grep -c . "$progress_file" || true)"
+echo "imported in this run: $imported_count"
+echo "total imported: $total_imported"
+if (( failure_count > 0 )); then
+  echo "failed posts: $failure_count (see $failed_file); rerun to retry" >&2
+  exit 1
+fi

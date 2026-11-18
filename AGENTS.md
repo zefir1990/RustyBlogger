@@ -33,9 +33,10 @@ target/release/rustyblogger serve \
   --bind-address 127.0.0.1:8080
 
 tools/import-localizations --slug strata-local-ai --database blog.redb
+tools/import-all-localizations --database blog.redb
 ```
 
-`import-localizations` requires the server to be stopped because `redb` is single-writer. `validate --strict` fails on warnings. Import aborts on errors; warnings are tolerated unless `--strict` is passed. Import also accepts `--posts-per-page`, `--site-title`, `--languages`, and `--default-language`.
+`import-localizations` and `import-all-localizations` require the server to be stopped because `redb` is single-writer. The batch import resumes from `tools/import-progress.txt`. `validate --strict` fails on warnings. Import aborts on errors; warnings are tolerated unless `--strict` is passed. Import also accepts `--posts-per-page`, `--site-title`, `--languages`, and `--default-language`.
 
 ## Architecture
 
@@ -52,6 +53,7 @@ tools/import-localizations --slug strata-local-ai --database blog.redb
 | `src/templates.rs` | HTML layout, post pages, home page, pagination, CSS |
 | `src/wordpress.rs` | WordPress localization import by post slug |
 | `tools/import-localizations` | Wrapper for `import-wordpress` |
+| `tools/import-all-localizations` | Resumable batch WordPress import |
 
 Keep storage behind `BlogRepository`. Parsing and rendering must stay independent of HTTP and database code. Prefer small focused functions and explicit names.
 
