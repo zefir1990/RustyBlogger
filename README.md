@@ -2,6 +2,8 @@
 
 Multilingual blog engine written in Rust. It reads posts from a [`redb`](https://github.com/cberner/redb) embedded database, renders them as full HTML pages, and serves them with [`axum`](https://github.com/tokio-rs/axum).
 
+Live example: [https://zefir1990.space](https://zefir1990.space)
+
 ## Features
 
 - Fast embedded storage with `redb`
