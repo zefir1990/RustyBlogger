@@ -76,30 +76,57 @@ a:hover { color: var(--accent-secondary); }
   background-clip: text;
 }
 .site-title:hover { filter: brightness(1.15); color: transparent; }
-.language-switcher { display: flex; flex-wrap: wrap; gap: 0.3rem; }
-.language-switcher a {
+.language-switcher { display: flex; align-items: center; }
+.language-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.5rem;
+  height: 2.5rem;
   border: 1px solid var(--border);
   border-radius: 999px;
-  padding: 0.22rem 0.65rem;
-  font-size: 0.76rem;
-  font-weight: 550;
+  font-size: 1.15rem;
+  line-height: 1;
   text-decoration: none;
-  color: var(--muted);
   background: rgba(255, 255, 255, 0.03);
-  transition: color 160ms ease, border-color 160ms ease, background 160ms ease;
+  transition: border-color 160ms ease, background 160ms ease, transform 160ms ease;
 }
-.language-switcher a:hover {
-  color: var(--text);
+.language-toggle:hover {
   border-color: rgba(255, 255, 255, 0.2);
   background: rgba(255, 255, 255, 0.07);
+  transform: translateY(-1px);
 }
-.language-switcher a.current {
+.language-toggle:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.language-options {
+  list-style: none;
+  padding: 0;
+  margin: 1.5rem 0 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr));
+  gap: 0.75rem;
+}
+.language-options a {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  padding: 0.9rem 1.1rem;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  text-decoration: none;
+  color: var(--text);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.055), rgba(255, 255, 255, 0.025));
+  transition: border-color 160ms ease, background 160ms ease;
+}
+.language-options a:hover {
+  border-color: rgba(167, 139, 250, 0.35);
+  background: rgba(255, 255, 255, 0.08);
+}
+.language-options a.current {
   border-color: rgba(125, 211, 252, 0.45);
   background: linear-gradient(135deg, rgba(125, 211, 252, 0.18), rgba(167, 139, 250, 0.18));
-  color: #dceeff;
-  box-shadow: 0 0 20px rgba(125, 211, 252, 0.12);
 }
-.language-switcher a.unavailable { opacity: 0.4; }
+.language-options .language-flag { font-size: 1.4rem; line-height: 1; }
+.language-options .language-name { font-weight: 600; }
 main {
   width: 100%;
   max-width: none;
@@ -437,7 +464,7 @@ footer a:hover { color: var(--accent); }
 @media (max-width: 640px) {
   html { font-size: 16px; }
   .site-header { padding: 0.85rem 1rem; }
-  .language-switcher a { padding: 0.18rem 0.5rem; font-size: 0.7rem; }
+  .language-toggle { width: 2.2rem; height: 2.2rem; font-size: 1rem; }
   main { padding-left: 0.6rem; padding-right: 0.6rem; }
   .post-card, .post { padding: 1.15rem; border-radius: 18px; }
   .post-card .card-title { font-size: clamp(1.4rem, 7vw, 2rem); }
@@ -530,7 +557,6 @@ pub struct HomePage {
     pub site_title: String,
     pub selected_language: String,
     pub default_language: String,
-    pub languages: Vec<LanguageRecord>,
     pub items: Vec<HomeItem>,
     pub category: Option<String>,
     pub fallback_to_default: bool,
@@ -542,17 +568,21 @@ pub struct HomePage {
 pub struct PostPage {
     pub site_title: String,
     pub selected_language: String,
-    pub languages: Vec<LanguageRecord>,
     pub post: PostRecord,
-    pub available_languages: Vec<String>,
 }
 
 pub struct MessagePage {
     pub site_title: String,
     pub selected_language: String,
-    pub languages: Vec<LanguageRecord>,
     pub title: String,
     pub message: String,
+}
+
+pub struct LanguagesPage {
+    pub site_title: String,
+    pub selected_language: String,
+    pub languages: Vec<LanguageRecord>,
+    pub next_path: String,
 }
 
 pub fn render_home(page: &HomePage) -> String {
@@ -634,9 +664,7 @@ pub fn render_home(page: &HomePage) -> String {
     render_layout(
         &page.site_title,
         &page.selected_language,
-        &page.languages,
         &next_path,
-        None,
         &content,
     )
 }
@@ -744,9 +772,7 @@ pub fn render_post(page: &PostPage) -> String {
     render_layout(
         &page.site_title,
         &page.selected_language,
-        &page.languages,
         &next_path,
-        Some(&page.available_languages),
         &content,
     )
 }
@@ -758,12 +784,45 @@ pub fn render_message(page: &MessagePage) -> String {
         escape_html(&page.message),
         escape_html(back_to_posts_label(&page.selected_language))
     );
+    render_layout(&page.site_title, &page.selected_language, "/", &content)
+}
+
+pub fn render_languages(page: &LanguagesPage) -> String {
+    let mut content = String::new();
+    let _ = write!(
+        content,
+        "<h1>{}</h1><ul class=\"language-options\">",
+        escape_html(choose_language_label(&page.selected_language))
+    );
+    for language in &page.languages {
+        let is_current = language.code.as_str() == page.selected_language;
+        let class_attribute = if is_current { " class=\"current\"" } else { "" };
+        let current_attribute = if is_current {
+            " aria-current=\"true\""
+        } else {
+            ""
+        };
+        let href = format!(
+            "/language/{}?next={}",
+            urlencoding::encode(&language.code),
+            urlencoding::encode(&page.next_path)
+        );
+        let _ = write!(
+            content,
+            "<li><a href=\"{}\"{}{} hreflang=\"{}\" target=\"_self\"><span class=\"language-flag\" aria-hidden=\"true\">{}</span><span class=\"language-name\">{}</span></a></li>",
+            escape_html(&href),
+            class_attribute,
+            current_attribute,
+            escape_html(&language.code),
+            language_flag(&language.code),
+            escape_html(&language_label(&language.code))
+        );
+    }
+    content.push_str("</ul>");
     render_layout(
         &page.site_title,
         &page.selected_language,
-        &page.languages,
-        "/",
-        None,
+        &page.next_path,
         &content,
     )
 }
@@ -771,53 +830,23 @@ pub fn render_message(page: &MessagePage) -> String {
 fn render_layout(
     site_title: &str,
     selected_language: &str,
-    languages: &[LanguageRecord],
     next_path: &str,
-    available_languages: Option<&[String]>,
     content: &str,
 ) -> String {
     let mut html = String::new();
     let _ = write!(
         html,
-        "<!doctype html><html lang=\"{}\"><head><meta charset=\"utf-8\"/><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"/><base target=\"_blank\"/><title>{}</title><link rel=\"stylesheet\" href=\"/assets/style.css\"/></head><body><header class=\"site-header\"><a class=\"site-title\" href=\"/\" target=\"_self\">{}</a><nav class=\"language-switcher\" aria-label=\"Language\">",
+        "<!doctype html><html lang=\"{}\"><head><meta charset=\"utf-8\"/><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"/><base target=\"_blank\"/><title>{}</title><link rel=\"stylesheet\" href=\"/assets/style.css\"/></head><body><header class=\"site-header\"><a class=\"site-title\" href=\"/\" target=\"_self\">{}</a><nav class=\"language-switcher\" aria-label=\"{}\"><a class=\"language-toggle\" href=\"/languages?next={}\" hreflang=\"{}\" title=\"{}\" aria-label=\"{}\" target=\"_self\">{}</a></nav></header>",
         escape_html(selected_language),
         escape_html(site_title),
-        escape_html(site_title)
+        escape_html(site_title),
+        escape_html(choose_language_label(selected_language)),
+        urlencoding::encode(next_path),
+        escape_html(selected_language),
+        escape_html(choose_language_label(selected_language)),
+        escape_html(choose_language_label(selected_language)),
+        language_flag(selected_language)
     );
-    for language in languages {
-        let is_current = language.code.as_str() == selected_language;
-        let is_available = available_languages
-            .map(|available| available.contains(&language.code))
-            .unwrap_or(true);
-        let mut classes = Vec::new();
-        if is_current {
-            classes.push("current");
-        }
-        if !is_available {
-            classes.push("unavailable");
-        }
-        let class_attribute = if classes.is_empty() {
-            String::new()
-        } else {
-            format!(" class=\"{}\"", classes.join(" "))
-        };
-        let current_attribute = if is_current {
-            " aria-current=\"true\""
-        } else {
-            ""
-        };
-        let _ = write!(
-            html,
-            "<a href=\"/language/{}?next={}\"{}{} hreflang=\"{}\" title=\"{}\" target=\"_self\">{}</a>",
-            urlencoding::encode(&language.code),
-            urlencoding::encode(next_path),
-            class_attribute,
-            current_attribute,
-            escape_html(&language.code),
-            escape_html(&language_label(&language.code)),
-            escape_html(&language_label(&language.code))
-        );
-    }
     let powered_by = footer_powered_by_label(selected_language)
         .replace(
             "{rustyblogger}",
@@ -833,7 +862,7 @@ fn render_layout(
     );
     let _ = write!(
         html,
-        "</nav></header><main>{content}</main><footer><p>{powered_by}</p><p>{author_by}</p></footer>"
+        "</header><main>{content}</main><footer><p>{powered_by}</p><p>{author_by}</p></footer>"
     );
     let warning = gdpr_warning_text(selected_language);
     let copy_code_labels = copy_code_labels(selected_language);
@@ -1242,5 +1271,41 @@ pub fn language_label(language: &str) -> String {
         "pt" => "Português".to_string(),
         "hi" => "हिन्दी".to_string(),
         other => other.to_ascii_uppercase(),
+    }
+}
+
+fn choose_language_label(language: &str) -> &'static str {
+    match language {
+        "ru" => "Выбор языка",
+        "zh" => "选择语言",
+        "de" => "Sprache wählen",
+        "ja" => "言語を選択",
+        "fr" => "Choisir la langue",
+        "es" => "Elegir idioma",
+        "pt" => "Escolher idioma",
+        "hi" => "भाषा चुनें",
+        _ => "Choose language",
+    }
+}
+
+fn language_flag(language: &str) -> &'static str {
+    match language {
+        "ru" => "🇷🇺",
+        "en" => "🇬🇧",
+        "zh" => "🇨🇳",
+        "de" => "🇩🇪",
+        "ja" => "🇯🇵",
+        "fr" => "🇫🇷",
+        "es" => "🇪🇸",
+        "pt" => "🇵🇹",
+        "hi" => "🇮🇳",
+        "uk" => "🇺🇦",
+        "it" => "🇮🇹",
+        "ko" => "🇰🇷",
+        "ar" => "🇸🇦",
+        "tr" => "🇹🇷",
+        "pl" => "🇵🇱",
+        "nl" => "🇳🇱",
+        _ => "🏳️",
     }
 }

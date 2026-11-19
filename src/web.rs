@@ -15,7 +15,7 @@ use tracing::error;
 
 use crate::model::{BlogSettings, LanguageRecord, PostRecord, PostSummary};
 use crate::storage::{BlogRepository, RedbPostStore};
-use crate::templates::{self, HomeItem, HomePage, MessagePage, PostPage};
+use crate::templates::{self, HomeItem, HomePage, LanguagesPage, MessagePage, PostPage};
 
 const LANGUAGE_COOKIE_NAME: &str = "rustyblogger_language";
 const LANGUAGE_COOKIE_MAX_AGE_SECONDS: u64 = 31_536_000;
@@ -44,6 +44,12 @@ struct LanguageQuery {
 
 #[derive(Debug, Default, Deserialize)]
 struct SwitchQuery {
+    next: Option<String>,
+}
+
+#[derive(Debug, Default, Deserialize)]
+struct LanguagesQuery {
+    lang: Option<String>,
     next: Option<String>,
 }
 
@@ -136,6 +142,7 @@ pub async fn serve(options: ServeOptions) -> Result<()> {
         .route("/posts/{slug}", get(post_page))
         .route("/category/{category}", get(category_page))
         .route("/language/{code}", get(switch_language))
+        .route("/languages", get(languages_page))
         .route("/api/posts", get(api_posts))
         .route("/api/posts/{slug}", get(api_post))
         .route("/api/languages", get(api_languages))
@@ -197,9 +204,7 @@ async fn post_page(
     let page = PostPage {
         site_title: state.site_title.as_ref().to_string(),
         selected_language: requested_language,
-        languages: (*state.languages).clone(),
         post,
-        available_languages: slug_record.languages,
     };
     Ok(Html(templates::render_post(&page)).into_response())
 }
@@ -257,7 +262,6 @@ fn render_message_page(
     let page = MessagePage {
         site_title: state.site_title.as_ref().to_string(),
         selected_language: selected_language.to_string(),
-        languages: (*state.languages).clone(),
         title,
         message,
     };
@@ -286,6 +290,25 @@ async fn switch_language(
             .insert(header::SET_COOKIE, header_value);
     }
     response
+}
+
+async fn languages_page(
+    State(state): State<AppState>,
+    Query(query): Query<LanguagesQuery>,
+    headers: HeaderMap,
+) -> Response {
+    let language_query = LanguageQuery {
+        lang: query.lang,
+        page: None,
+    };
+    let selected_language = resolve_language(&state, &language_query, &headers);
+    let page = LanguagesPage {
+        site_title: state.site_title.as_ref().to_string(),
+        selected_language,
+        languages: (*state.languages).clone(),
+        next_path: sanitize_redirect_target(query.next.as_deref()),
+    };
+    Html(templates::render_languages(&page)).into_response()
 }
 
 async fn api_posts(
@@ -399,7 +422,6 @@ fn build_home_page(
         site_title: state.site_title.as_ref().to_string(),
         selected_language: selected_language.to_string(),
         default_language: state.default_language.as_ref().to_string(),
-        languages: (*state.languages).clone(),
         items: page_items,
         category: category.map(str::to_string),
         fallback_to_default,
