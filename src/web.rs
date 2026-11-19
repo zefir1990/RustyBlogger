@@ -4,9 +4,10 @@ use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use anyhow::{bail, Result};
-use axum::extract::{Path, Query, State};
+use axum::extract::{Path, Query, Request, State};
 use axum::http::{header, HeaderMap, HeaderValue, StatusCode};
-use axum::response::{Html, IntoResponse, Redirect, Response};
+use axum::middleware::{self, Next};
+use axum::response::{IntoResponse, Redirect, Response};
 use axum::routing::get;
 use axum::{Json, Router};
 use serde::{Deserialize, Serialize};
@@ -17,12 +18,19 @@ use tracing::error;
 
 use crate::date::format_unix_date;
 use crate::model::{BlogSettings, LanguageRecord, PostRecord, PostSummary};
+use crate::render::content_hash;
 use crate::storage::{BlogRepository, RedbPostStore};
 use crate::templates::{self, HomeItem, HomePage, LanguagesPage, MessagePage, PostPage};
 
 const LANGUAGE_COOKIE_NAME: &str = "rustyblogger_language";
 const LANGUAGE_COOKIE_MAX_AGE_SECONDS: u64 = 31_536_000;
 const EDITOR_KEY_HEADER: &str = "rusty-blogger-post-editor-key";
+const HTML_CACHE_CONTROL: &str = "private, no-cache";
+const API_CACHE_CONTROL: &str = "private, no-cache";
+const STYLESHEET_CACHE_CONTROL: &str = "public, max-age=31536000, immutable";
+const MEDIA_CACHE_CONTROL: &str = "public, max-age=604800";
+const NO_STORE_CACHE_CONTROL: &str = "no-store";
+const LOCALIZED_VARY: &str = "accept-language, cookie";
 
 pub struct ServeOptions {
     pub database_path: PathBuf,
@@ -126,9 +134,15 @@ impl From<anyhow::Error> for AppError {
     }
 }
 
+impl From<serde_json::Error> for AppError {
+    fn from(error: serde_json::Error) -> Self {
+        AppError::from(anyhow::Error::from(error))
+    }
+}
+
 impl IntoResponse for AppError {
     fn into_response(self) -> Response {
-        (self.status, self.message).into_response()
+        no_store((self.status, self.message).into_response())
     }
 }
 
@@ -207,6 +221,7 @@ pub async fn serve(options: ServeOptions) -> Result<()> {
         .fallback(not_found_page)
         .method_not_allowed_fallback(method_not_allowed_page)
         .with_state(state)
+        .layer(middleware::from_fn(add_media_cache_control))
         .layer(CompressionLayer::new())
         .layer(TraceLayer::new_for_http());
     let listener = tokio::net::TcpListener::bind(&options.bind_address).await?;
@@ -223,7 +238,11 @@ async fn home(
     let selected_language = resolve_language(&state, &query, &headers);
     let base_url = request_base_url(&headers);
     let page = build_home_page(&state, &selected_language, None, query.page, &base_url)?;
-    Ok(Html(templates::render_home(&page)).into_response())
+    Ok(cached_html_response(
+        &headers,
+        StatusCode::OK,
+        templates::render_home(&page),
+    ))
 }
 
 async fn category_page(
@@ -241,7 +260,11 @@ async fn category_page(
         query.page,
         &base_url,
     )?;
-    Ok(Html(templates::render_home(&page)).into_response())
+    Ok(cached_html_response(
+        &headers,
+        StatusCode::OK,
+        templates::render_home(&page),
+    ))
 }
 
 async fn post_page(
@@ -258,6 +281,7 @@ async fn post_page(
             &requested_language,
             &slug,
             &base_url,
+            &headers,
         ));
     };
     let selected_language = if slug_record.languages.contains(&requested_language) {
@@ -271,6 +295,7 @@ async fn post_page(
             &requested_language,
             &slug,
             &base_url,
+            &headers,
         ));
     };
     let page = PostPage {
@@ -280,7 +305,11 @@ async fn post_page(
         base_url,
         post,
     };
-    Ok(Html(templates::render_post(&page)).into_response())
+    Ok(cached_html_response(
+        &headers,
+        StatusCode::OK,
+        templates::render_post(&page),
+    ))
 }
 
 fn render_not_found(
@@ -288,6 +317,7 @@ fn render_not_found(
     selected_language: &str,
     slug: &str,
     base_url: &str,
+    headers: &HeaderMap,
 ) -> Response {
     let (title, message) = templates::post_not_found_text(selected_language, slug);
     render_message_page(
@@ -297,6 +327,7 @@ fn render_not_found(
         message,
         StatusCode::NOT_FOUND,
         base_url,
+        headers,
     )
 }
 
@@ -315,6 +346,7 @@ async fn not_found_page(
         message.to_string(),
         StatusCode::NOT_FOUND,
         &base_url,
+        &headers,
     )
 }
 
@@ -333,6 +365,7 @@ async fn method_not_allowed_page(
         message.to_string(),
         StatusCode::METHOD_NOT_ALLOWED,
         &base_url,
+        &headers,
     )
 }
 
@@ -343,6 +376,7 @@ fn render_message_page(
     message: String,
     status: StatusCode,
     base_url: &str,
+    headers: &HeaderMap,
 ) -> Response {
     let page = MessagePage {
         site_title: state.site_title.as_ref().to_string(),
@@ -352,7 +386,7 @@ fn render_message_page(
         title,
         message,
     };
-    (status, Html(templates::render_message(&page))).into_response()
+    cached_html_response(headers, status, templates::render_message(&page))
 }
 
 async fn switch_language(
@@ -376,7 +410,7 @@ async fn switch_language(
             .headers_mut()
             .insert(header::SET_COOKIE, header_value);
     }
-    response
+    no_store(response)
 }
 
 async fn languages_page(
@@ -397,14 +431,14 @@ async fn languages_page(
         languages: (*state.languages).clone(),
         next_path: sanitize_redirect_target(query.next.as_deref()),
     };
-    Html(templates::render_languages(&page)).into_response()
+    cached_html_response(&headers, StatusCode::OK, templates::render_languages(&page))
 }
 
 async fn api_posts(
     State(state): State<AppState>,
     Query(query): Query<LanguageQuery>,
     headers: HeaderMap,
-) -> Result<Json<Vec<ApiPostSummary>>, AppError> {
+) -> Result<Response, AppError> {
     let requested_language = resolve_language(&state, &query, &headers);
     let items = collect_home_items(&state, &requested_language, None)?;
     let posts = items
@@ -415,8 +449,8 @@ async fn api_posts(
             requested_language: requested_language.clone(),
             is_fallback: item.is_fallback,
         })
-        .collect();
-    Ok(Json(posts))
+        .collect::<Vec<_>>();
+    cached_json_response(&headers, StatusCode::OK, &posts)
 }
 
 async fn api_post(
@@ -424,7 +458,7 @@ async fn api_post(
     Path(slug): Path<String>,
     Query(query): Query<LanguageQuery>,
     headers: HeaderMap,
-) -> Result<Json<ApiPostResponse>, AppError> {
+) -> Result<Response, AppError> {
     let requested_language = resolve_language(&state, &query, &headers);
     let slug_record = state.repository.get_slug(&slug)?.ok_or_else(|| {
         AppError::not_found(templates::post_not_found_message(
@@ -446,11 +480,12 @@ async fn api_post(
                 &slug,
             ))
         })?;
-    Ok(Json(ApiPostResponse {
+    let response = ApiPostResponse {
         post,
         requested_language,
         available_languages: slug_record.languages,
-    }))
+    };
+    cached_json_response(&headers, StatusCode::OK, &response)
 }
 
 async fn create_post(
@@ -472,7 +507,7 @@ async fn create_post(
         return Err(AppError::conflict("post already exists"));
     }
     state.repository.upsert_post(&post)?;
-    Ok((StatusCode::CREATED, Json(post)).into_response())
+    Ok(no_store((StatusCode::CREATED, Json(post)).into_response()))
 }
 
 async fn update_post(
@@ -499,7 +534,7 @@ async fn update_post(
         return Err(AppError::not_found("post not found"));
     }
     state.repository.upsert_post(&post)?;
-    Ok(Json(post).into_response())
+    Ok(no_store(Json(post).into_response()))
 }
 
 async fn delete_post(
@@ -520,20 +555,25 @@ async fn delete_post(
     if !state.repository.delete_post(normalized_slug, &language)? {
         return Err(AppError::not_found("post not found"));
     }
-    Ok(StatusCode::NO_CONTENT.into_response())
+    Ok(no_store(StatusCode::NO_CONTENT.into_response()))
 }
 
-async fn api_languages(State(state): State<AppState>) -> Json<ApiLanguages> {
-    Json(ApiLanguages {
+async fn api_languages(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<Response, AppError> {
+    let response = ApiLanguages {
         default_language: state.default_language.as_ref().to_string(),
         languages: (*state.languages).clone(),
-    })
+    };
+    cached_json_response(&headers, StatusCode::OK, &response)
 }
 
 async fn api_language_posts(
     State(state): State<AppState>,
     Path(language): Path<String>,
-) -> Result<Json<Vec<PostSummary>>, AppError> {
+    headers: HeaderMap,
+) -> Result<Response, AppError> {
     let normalized_language = language.trim().to_ascii_lowercase();
     if !language_is_supported(&state, &normalized_language) {
         return Err(AppError::not_found(templates::language_not_found_message(
@@ -541,18 +581,25 @@ async fn api_language_posts(
             &language,
         )));
     }
-    Ok(Json(state.repository.list_posts(&normalized_language)?))
+    let posts = state.repository.list_posts(&normalized_language)?;
+    cached_json_response(&headers, StatusCode::OK, &posts)
 }
 
 async fn api_health(State(state): State<AppState>) -> Result<Response, AppError> {
     state.repository.check_health()?;
-    Ok(Json(serde_json::json!({ "status": "ok" })).into_response())
+    Ok(no_store(
+        Json(serde_json::json!({ "status": "ok" })).into_response(),
+    ))
 }
 
-async fn stylesheet() -> impl IntoResponse {
-    (
-        [(header::CONTENT_TYPE, "text/css; charset=utf-8")],
+async fn stylesheet(headers: HeaderMap) -> Response {
+    cached_text_response(
+        &headers,
+        StatusCode::OK,
         templates::STYLESHEET,
+        "text/css; charset=utf-8",
+        STYLESHEET_CACHE_CONTROL,
+        None,
     )
 }
 
@@ -727,6 +774,109 @@ fn sanitize_redirect_target(target: Option<&str>) -> String {
         Some(target) if target.starts_with('/') && !target.starts_with("//") => target.to_string(),
         _ => "/".to_string(),
     }
+}
+
+fn cached_text_response(
+    request_headers: &HeaderMap,
+    status: StatusCode,
+    body: &str,
+    content_type: &'static str,
+    cache_control: &'static str,
+    vary: Option<&'static str>,
+) -> Response {
+    let etag = format!("W/\"{:016x}\"", content_hash(body.as_bytes()));
+    let not_modified = status == StatusCode::OK && if_none_match_matches(request_headers, &etag);
+    let mut response = if not_modified {
+        StatusCode::NOT_MODIFIED.into_response()
+    } else {
+        (
+            status,
+            [(header::CONTENT_TYPE, content_type)],
+            body.to_string(),
+        )
+            .into_response()
+    };
+    let response_headers = response.headers_mut();
+    if let Ok(value) = HeaderValue::from_str(&etag) {
+        response_headers.insert(header::ETAG, value);
+    }
+    response_headers.insert(
+        header::CACHE_CONTROL,
+        HeaderValue::from_static(cache_control),
+    );
+    if let Some(vary) = vary {
+        response_headers.append(header::VARY, HeaderValue::from_static(vary));
+    }
+    response
+}
+
+fn cached_html_response(request_headers: &HeaderMap, status: StatusCode, body: String) -> Response {
+    cached_text_response(
+        request_headers,
+        status,
+        &body,
+        "text/html; charset=utf-8",
+        HTML_CACHE_CONTROL,
+        Some(LOCALIZED_VARY),
+    )
+}
+
+fn cached_json_response<T: Serialize>(
+    request_headers: &HeaderMap,
+    status: StatusCode,
+    value: &T,
+) -> Result<Response, AppError> {
+    let body = serde_json::to_string(value)?;
+    Ok(cached_text_response(
+        request_headers,
+        status,
+        &body,
+        "application/json",
+        API_CACHE_CONTROL,
+        Some(LOCALIZED_VARY),
+    ))
+}
+
+fn if_none_match_matches(request_headers: &HeaderMap, etag: &str) -> bool {
+    let etag_value = etag.strip_prefix("W/").unwrap_or(etag);
+    request_headers
+        .get_all(header::IF_NONE_MATCH)
+        .iter()
+        .filter_map(|value| value.to_str().ok())
+        .flat_map(|value| value.split(','))
+        .map(str::trim)
+        .any(|candidate| {
+            if candidate == "*" {
+                return true;
+            }
+            let candidate_value = candidate.strip_prefix("W/").unwrap_or(candidate);
+            candidate_value == etag_value
+        })
+}
+
+fn no_store(mut response: Response) -> Response {
+    response.headers_mut().insert(
+        header::CACHE_CONTROL,
+        HeaderValue::from_static(NO_STORE_CACHE_CONTROL),
+    );
+    response
+}
+
+async fn add_media_cache_control(request: Request, next: Next) -> Response {
+    let is_media = request.uri().path().starts_with("/media/");
+    let mut response = next.run(request).await;
+    if is_media
+        && matches!(
+            response.status(),
+            StatusCode::OK | StatusCode::PARTIAL_CONTENT | StatusCode::NOT_MODIFIED
+        )
+    {
+        response.headers_mut().insert(
+            header::CACHE_CONTROL,
+            HeaderValue::from_static(MEDIA_CACHE_CONTROL),
+        );
+    }
+    response
 }
 
 impl PostWriteRequest {

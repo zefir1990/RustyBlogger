@@ -1,13 +1,19 @@
 use std::fmt::Write as _;
+use std::sync::OnceLock;
 
 use crate::date::format_unix_date;
 use crate::model::{LanguageRecord, PostRecord};
-use crate::render::escape_html;
+use crate::render::{content_hash, escape_html};
 
 const DEFAULT_OPEN_GRAPH_IMAGE_PATH: &str = "/media/og-image.jpg";
 const DEFAULT_OPEN_GRAPH_IMAGE_TYPE: &str = "image/jpeg";
 const DEFAULT_OPEN_GRAPH_IMAGE_WIDTH: u32 = 1200;
 const DEFAULT_OPEN_GRAPH_IMAGE_HEIGHT: u32 = 630;
+
+pub fn stylesheet_version() -> u64 {
+    static VERSION: OnceLock<u64> = OnceLock::new();
+    *VERSION.get_or_init(|| content_hash(STYLESHEET.as_bytes()))
+}
 
 pub const STYLESHEET: &str = r#"
 :root {
@@ -1262,9 +1268,10 @@ fn render_layout(
         );
     }
     let mut html = String::new();
+    let stylesheet_version = stylesheet_version();
     let _ = write!(
         html,
-        "<!doctype html><html lang=\"{}\"><head><meta charset=\"utf-8\"/><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"/><base target=\"_blank\"/>{head}<link rel=\"stylesheet\" href=\"/assets/style.css\"/></head><body><header class=\"site-header\"><a class=\"site-title\" href=\"/\" target=\"_self\">{}</a><div class=\"site-actions\"><nav class=\"category-nav\" aria-label=\"{}\">{category_buttons}</nav><nav class=\"language-switcher\" aria-label=\"{}\"><a class=\"language-toggle\" href=\"/languages?next={}\" hreflang=\"{}\" title=\"{}\" aria-label=\"{}\" target=\"_self\">{}</a></nav></div></header>",
+        "<!doctype html><html lang=\"{}\"><head><meta charset=\"utf-8\"/><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"/><base target=\"_blank\"/>{head}<link rel=\"stylesheet\" href=\"/assets/style.css?v={stylesheet_version}\"/></head><body><header class=\"site-header\"><a class=\"site-title\" href=\"/\" target=\"_self\">{}</a><div class=\"site-actions\"><nav class=\"category-nav\" aria-label=\"{}\">{category_buttons}</nav><nav class=\"language-switcher\" aria-label=\"{}\"><a class=\"language-toggle\" href=\"/languages?next={}\" hreflang=\"{}\" title=\"{}\" aria-label=\"{}\" target=\"_self\">{}</a></nav></div></header>",
         escape_html(selected_language),
         escape_html(site_title),
         escape_html(categories_label(selected_language)),
