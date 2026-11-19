@@ -4,7 +4,10 @@ use crate::date::format_unix_date;
 use crate::model::{LanguageRecord, PostRecord};
 use crate::render::escape_html;
 
-const DEFAULT_OPEN_GRAPH_IMAGE_PATH: &str = "/media/zefir1990.jpg";
+const DEFAULT_OPEN_GRAPH_IMAGE_PATH: &str = "/media/og-image.jpg";
+const DEFAULT_OPEN_GRAPH_IMAGE_TYPE: &str = "image/jpeg";
+const DEFAULT_OPEN_GRAPH_IMAGE_WIDTH: u32 = 1200;
+const DEFAULT_OPEN_GRAPH_IMAGE_HEIGHT: u32 = 630;
 
 pub const STYLESHEET: &str = r#"
 :root {
@@ -714,12 +717,13 @@ pub fn render_home(page: &HomePage) -> String {
         ),
         None => page.site_title.clone(),
     };
-    let image_url = page
+    let post_image_url = page
         .items
         .iter()
         .find_map(|item| first_image_source(&item.post.body_html))
-        .map(|image| absolute_url(&page.base_url, &image))
-        .unwrap_or_else(|| default_open_graph_image(&page.base_url));
+        .map(|image| absolute_url(&page.base_url, &image));
+    let uses_default_image = post_image_url.is_none();
+    let image_url = post_image_url.unwrap_or_else(|| default_open_graph_image(&page.base_url));
     let canonical_path = match (&page.category, page.current_page) {
         (Some(category), 1) => format!("/category/{}", urlencoding::encode(category)),
         (Some(category), page_number) => {
@@ -737,6 +741,9 @@ pub fn render_home(page: &HomePage) -> String {
         description,
         url: canonical_url(&page.base_url, &canonical_path, &page.selected_language),
         image_url: Some(image_url),
+        image_type: uses_default_image.then_some(DEFAULT_OPEN_GRAPH_IMAGE_TYPE),
+        image_width: uses_default_image.then_some(DEFAULT_OPEN_GRAPH_IMAGE_WIDTH),
+        image_height: uses_default_image.then_some(DEFAULT_OPEN_GRAPH_IMAGE_HEIGHT),
         locale: open_graph_locale(&page.selected_language),
         site_name: page.site_title.clone(),
         published_date: None,
@@ -858,9 +865,10 @@ pub fn render_post(page: &PostPage) -> String {
     } else {
         post_description
     };
-    let image_url = first_image_source(&page.post.body_html)
-        .map(|image| absolute_url(&page.base_url, &image))
-        .unwrap_or_else(|| default_open_graph_image(&page.base_url));
+    let post_image_url =
+        first_image_source(&page.post.body_html).map(|image| absolute_url(&page.base_url, &image));
+    let uses_default_image = post_image_url.is_none();
+    let image_url = post_image_url.unwrap_or_else(|| default_open_graph_image(&page.base_url));
     let published_date = if page.post.published_date.is_empty() {
         None
     } else {
@@ -876,6 +884,9 @@ pub fn render_post(page: &PostPage) -> String {
         description,
         url: canonical_url(&page.base_url, &next_path, &page.post.language),
         image_url: Some(image_url),
+        image_type: uses_default_image.then_some(DEFAULT_OPEN_GRAPH_IMAGE_TYPE),
+        image_width: uses_default_image.then_some(DEFAULT_OPEN_GRAPH_IMAGE_WIDTH),
+        image_height: uses_default_image.then_some(DEFAULT_OPEN_GRAPH_IMAGE_HEIGHT),
         locale: open_graph_locale(&page.post.language),
         site_name: page.site_title.clone(),
         published_date,
@@ -904,6 +915,9 @@ pub fn render_message(page: &MessagePage) -> String {
         description: page.message.clone(),
         url: canonical_url(&page.base_url, "/", &page.selected_language),
         image_url: Some(default_open_graph_image(&page.base_url)),
+        image_type: Some(DEFAULT_OPEN_GRAPH_IMAGE_TYPE),
+        image_width: Some(DEFAULT_OPEN_GRAPH_IMAGE_WIDTH),
+        image_height: Some(DEFAULT_OPEN_GRAPH_IMAGE_HEIGHT),
         locale: open_graph_locale(&page.selected_language),
         site_name: page.site_title.clone(),
         published_date: None,
@@ -958,6 +972,9 @@ pub fn render_languages(page: &LanguagesPage) -> String {
         description: languages_title.to_string(),
         url: canonical_url(&page.base_url, "/languages", &page.selected_language),
         image_url: Some(default_open_graph_image(&page.base_url)),
+        image_type: Some(DEFAULT_OPEN_GRAPH_IMAGE_TYPE),
+        image_width: Some(DEFAULT_OPEN_GRAPH_IMAGE_WIDTH),
+        image_height: Some(DEFAULT_OPEN_GRAPH_IMAGE_HEIGHT),
         locale: open_graph_locale(&page.selected_language),
         site_name: page.site_title.clone(),
         published_date: None,
@@ -979,6 +996,9 @@ struct OpenGraph {
     description: String,
     url: String,
     image_url: Option<String>,
+    image_type: Option<&'static str>,
+    image_width: Option<u32>,
+    image_height: Option<u32>,
     locale: &'static str,
     site_name: String,
     published_date: Option<String>,
@@ -999,6 +1019,25 @@ fn render_head(open_graph: &OpenGraph) -> String {
             head,
             "<meta property=\"og:image\" content=\"{escaped_image_url}\"/><meta property=\"og:logo\" content=\"{escaped_image_url}\"/><meta name=\"twitter:card\" content=\"summary_large_image\"/><meta name=\"twitter:image\" content=\"{escaped_image_url}\"/>"
         );
+        if let Some(image_type) = open_graph.image_type {
+            let _ = write!(
+                head,
+                "<meta property=\"og:image:type\" content=\"{}\"/>",
+                escape_html(image_type)
+            );
+        }
+        if let Some(image_width) = open_graph.image_width {
+            let _ = write!(
+                head,
+                "<meta property=\"og:image:width\" content=\"{image_width}\"/>"
+            );
+        }
+        if let Some(image_height) = open_graph.image_height {
+            let _ = write!(
+                head,
+                "<meta property=\"og:image:height\" content=\"{image_height}\"/>"
+            );
+        }
     } else {
         head.push_str("<meta name=\"twitter:card\" content=\"summary\"/>");
     }
