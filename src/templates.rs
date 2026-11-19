@@ -396,17 +396,33 @@ time { font-variant-numeric: tabular-nums; }
 }
 .post-body .post-link { margin: 0.5rem 0; }
 .post-card .post-body { margin-top: 1.1rem; }
-.permalink {
-  display: inline-block;
+.post-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.8rem;
   margin-top: 0.2rem;
+}
+.share-button {
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 0.22rem 0.7rem;
+  font: inherit;
   font-size: 0.72rem;
   font-weight: 700;
-  letter-spacing: 0.12em;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
-  text-decoration: none;
   color: var(--muted);
+  background: rgba(255, 255, 255, 0.03);
+  cursor: pointer;
+  transition: color 160ms ease, border-color 160ms ease, background 160ms ease;
 }
-.permalink:hover { color: var(--accent); }
+.share-button:hover {
+  color: var(--text);
+  border-color: rgba(255, 255, 255, 0.2);
+  background: rgba(255, 255, 255, 0.07);
+}
+.share-button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .pagination {
   display: flex;
   flex-wrap: wrap;
@@ -583,6 +599,64 @@ const COPY_CODE_SCRIPT_TEMPLATE: &str = r#"
 })();
 "#;
 
+const SHARE_SCRIPT_TEMPLATE: &str = r#"
+(function () {
+  function showFeedback(button, label) {
+    var originalLabel = button.getAttribute("data-original-label") || button.textContent;
+    button.setAttribute("data-original-label", originalLabel);
+    button.textContent = label;
+    window.clearTimeout(button.resetTimer);
+    button.resetTimer = window.setTimeout(function () {
+      button.textContent = originalLabel;
+    }, 1800);
+  }
+  function copyWithFallback(url, button) {
+    var textarea = document.createElement("textarea");
+    textarea.value = url;
+    textarea.setAttribute("readonly", "");
+    textarea.style.position = "fixed";
+    textarea.style.opacity = "0";
+    document.body.appendChild(textarea);
+    textarea.select();
+    var copied = false;
+    try {
+      copied = document.execCommand("copy");
+    } catch (error) {
+      copied = false;
+    }
+    document.body.removeChild(textarea);
+    showFeedback(button, button.getAttribute(copied ? "data-copied-label" : "data-failed-label"));
+  }
+  function copyUrl(url, button) {
+    if (navigator.clipboard && window.isSecureContext) {
+      navigator.clipboard.writeText(url).then(function () {
+        showFeedback(button, button.getAttribute("data-copied-label"));
+      }, function () {
+        copyWithFallback(url, button);
+      });
+    } else {
+      copyWithFallback(url, button);
+    }
+  }
+  Array.prototype.forEach.call(document.querySelectorAll(".share-button"), function (button) {
+    button.addEventListener("click", function () {
+      var url = button.getAttribute("data-share-url");
+      var title = button.getAttribute("data-share-title");
+      if (navigator.share) {
+        navigator.share({ title: title, url: url }).catch(function (error) {
+          if (error && error.name === "AbortError") {
+            return;
+          }
+          copyUrl(url, button);
+        });
+      } else {
+        copyUrl(url, button);
+      }
+    });
+  });
+})();
+"#;
+
 pub struct HomeItem {
     pub post: PostRecord,
     pub languages: Vec<String>,
@@ -651,6 +725,7 @@ pub fn render_home(page: &HomePage) -> String {
         );
     } else {
         content.push_str("<ul class=\"post-list\">");
+        let localized_share_labels = share_labels(&page.selected_language);
         for item in &page.items {
             let post = &item.post;
             let post_href = format!(
@@ -683,12 +758,16 @@ pub fn render_home(page: &HomePage) -> String {
             if item.is_fallback {
                 content.push_str("<span class=\"badge\">fallback</span>");
             }
+            let share_url = format!("{}{}", page.base_url, post_href);
             let _ = write!(
                 content,
-                "</div><div class=\"post-body\">{}</div><p><a class=\"permalink\" href=\"{}\" target=\"_self\">{}</a></p></li>",
+                "</div><div class=\"post-body\">{}</div><p class=\"post-actions\"><button type=\"button\" class=\"share-button\" data-share-url=\"{}\" data-share-title=\"{}\" data-copied-label=\"{}\" data-failed-label=\"{}\">{}</button></p></li>",
                 post.body_html,
-                escape_html(&post_href),
-                escape_html(permalink_label(&page.selected_language))
+                escape_html(&share_url),
+                escape_html(&post.title),
+                escape_html(localized_share_labels.copied),
+                escape_html(localized_share_labels.failed),
+                escape_html(localized_share_labels.share)
             );
         }
         content.push_str("</ul>");
@@ -1221,9 +1300,10 @@ fn render_layout(
         .replace("__FAILED_LABEL__", copy_code_labels.failed)
         .replace("__ARIA_LABEL__", copy_code_labels.aria)
         .replace("__EXAMPLE_LABEL__", copy_code_labels.example);
+    let share_script = SHARE_SCRIPT_TEMPLATE;
     let _ = write!(
         html,
-        "<aside class=\"gdpr-warning\" id=\"gdpr-warning\" role=\"note\"><p>{}</p><button type=\"button\" id=\"gdpr-dismiss\">{}</button></aside><script>(function(){{var key=\"rustyblogger-gdpr-dismissed\";var warning=document.getElementById(\"gdpr-warning\");if(!warning){{return;}}var dismissed=false;try{{dismissed=window.localStorage.getItem(key)===\"1\";}}catch(error){{dismissed=false;}}if(dismissed){{warning.hidden=true;return;}}var button=document.getElementById(\"gdpr-dismiss\");button.addEventListener(\"click\",function(){{warning.hidden=true;try{{window.localStorage.setItem(key,\"1\");}}catch(error){{}}}});}})();</script><script>{copy_code_script}</script></body></html>",
+        "<aside class=\"gdpr-warning\" id=\"gdpr-warning\" role=\"note\"><p>{}</p><button type=\"button\" id=\"gdpr-dismiss\">{}</button></aside><script>(function(){{var key=\"rustyblogger-gdpr-dismissed\";var warning=document.getElementById(\"gdpr-warning\");if(!warning){{return;}}var dismissed=false;try{{dismissed=window.localStorage.getItem(key)===\"1\";}}catch(error){{dismissed=false;}}if(dismissed){{warning.hidden=true;return;}}var button=document.getElementById(\"gdpr-dismiss\");button.addEventListener(\"click\",function(){{warning.hidden=true;try{{window.localStorage.setItem(key,\"1\");}}catch(error){{}}}});}})();</script><script>{copy_code_script}</script><script>{share_script}</script></body></html>",
         escape_html(warning.message),
         escape_html(warning.dismiss_label)
     );
@@ -1489,17 +1569,59 @@ fn back_to_posts_label(language: &str) -> &'static str {
     }
 }
 
-fn permalink_label(language: &str) -> &'static str {
+struct ShareLabels {
+    share: &'static str,
+    copied: &'static str,
+    failed: &'static str,
+}
+
+fn share_labels(language: &str) -> ShareLabels {
     match language {
-        "ru" => "Постоянная ссылка",
-        "zh" => "永久链接",
-        "de" => "Dauerlink",
-        "ja" => "パーマリンク",
-        "fr" => "Permalien",
-        "es" => "Enlace permanente",
-        "pt" => "Link permanente",
-        "hi" => "स्थायी लिंक",
-        _ => "Permalink",
+        "ru" => ShareLabels {
+            share: "Поделиться",
+            copied: "Ссылка скопирована",
+            failed: "Не удалось поделиться",
+        },
+        "zh" => ShareLabels {
+            share: "分享",
+            copied: "链接已复制",
+            failed: "分享失败",
+        },
+        "de" => ShareLabels {
+            share: "Teilen",
+            copied: "Link kopiert",
+            failed: "Teilen fehlgeschlagen",
+        },
+        "ja" => ShareLabels {
+            share: "共有",
+            copied: "リンクをコピーしました",
+            failed: "共有に失敗しました",
+        },
+        "fr" => ShareLabels {
+            share: "Partager",
+            copied: "Lien copié",
+            failed: "Échec du partage",
+        },
+        "es" => ShareLabels {
+            share: "Compartir",
+            copied: "Enlace copiado",
+            failed: "Error al compartir",
+        },
+        "pt" => ShareLabels {
+            share: "Compartilhar",
+            copied: "Link copiado",
+            failed: "Falha ao compartilhar",
+        },
+        "hi" => ShareLabels {
+            share: "साझा करें",
+            copied: "लिंक कॉपी हो गया",
+            failed: "साझा करना विफल",
+        },
+        _ => ShareLabels {
+            share: "Share",
+            copied: "Link copied",
+            failed: "Share failed",
+        },
     }
 }
 
