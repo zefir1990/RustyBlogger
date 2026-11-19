@@ -1,6 +1,7 @@
 use std::collections::BTreeSet;
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use anyhow::{bail, Result};
 use axum::extract::{Path, Query, State};
@@ -14,12 +15,14 @@ use tower_http::services::ServeDir;
 use tower_http::trace::TraceLayer;
 use tracing::error;
 
+use crate::date::format_unix_date;
 use crate::model::{BlogSettings, LanguageRecord, PostRecord, PostSummary};
 use crate::storage::{BlogRepository, RedbPostStore};
 use crate::templates::{self, HomeItem, HomePage, LanguagesPage, MessagePage, PostPage};
 
 const LANGUAGE_COOKIE_NAME: &str = "rustyblogger_language";
 const LANGUAGE_COOKIE_MAX_AGE_SECONDS: u64 = 31_536_000;
+const EDITOR_KEY_HEADER: &str = "rusty-blogger-post-editor-key";
 
 pub struct ServeOptions {
     pub database_path: PathBuf,
@@ -55,6 +58,28 @@ struct LanguagesQuery {
     next: Option<String>,
 }
 
+#[derive(Debug, Default, Deserialize)]
+struct DeleteQuery {
+    lang: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct PostWriteRequest {
+    #[serde(default)]
+    slug: String,
+    language: String,
+    title: String,
+    #[serde(default)]
+    categories: Vec<String>,
+    body_html: String,
+    #[serde(default)]
+    source_path: String,
+    #[serde(default)]
+    published_unix_seconds: Option<u64>,
+    #[serde(default)]
+    published_date: Option<String>,
+}
+
 #[derive(Debug)]
 struct AppError {
     status: StatusCode,
@@ -65,6 +90,27 @@ impl AppError {
     fn not_found(message: impl Into<String>) -> Self {
         Self {
             status: StatusCode::NOT_FOUND,
+            message: message.into(),
+        }
+    }
+
+    fn bad_request(message: impl Into<String>) -> Self {
+        Self {
+            status: StatusCode::BAD_REQUEST,
+            message: message.into(),
+        }
+    }
+
+    fn unauthorized(message: impl Into<String>) -> Self {
+        Self {
+            status: StatusCode::UNAUTHORIZED,
+            message: message.into(),
+        }
+    }
+
+    fn conflict(message: impl Into<String>) -> Self {
+        Self {
+            status: StatusCode::CONFLICT,
             message: message.into(),
         }
     }
@@ -147,8 +193,11 @@ pub async fn serve(options: ServeOptions) -> Result<()> {
         .route("/category/{category}", get(category_page))
         .route("/language/{code}", get(switch_language))
         .route("/languages", get(languages_page))
-        .route("/api/posts", get(api_posts))
-        .route("/api/posts/{slug}", get(api_post))
+        .route("/api/posts", get(api_posts).post(create_post))
+        .route(
+            "/api/posts/{slug}",
+            get(api_post).put(update_post).delete(delete_post),
+        )
         .route("/api/languages", get(api_languages))
         .route("/api/languages/{language}/posts", get(api_language_posts))
         .route("/api/health", get(api_health))
@@ -404,6 +453,76 @@ async fn api_post(
     }))
 }
 
+async fn create_post(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(request): Json<PostWriteRequest>,
+) -> Result<Response, AppError> {
+    require_editor_key(&state, &headers)?;
+    let slug = request.slug.trim().to_string();
+    if slug.is_empty() {
+        return Err(AppError::bad_request("slug is required"));
+    }
+    let post = request.into_post_record(&slug)?;
+    if state
+        .repository
+        .get_post(&post.slug, &post.language)?
+        .is_some()
+    {
+        return Err(AppError::conflict("post already exists"));
+    }
+    state.repository.upsert_post(&post)?;
+    Ok((StatusCode::CREATED, Json(post)).into_response())
+}
+
+async fn update_post(
+    State(state): State<AppState>,
+    Path(slug): Path<String>,
+    headers: HeaderMap,
+    Json(request): Json<PostWriteRequest>,
+) -> Result<Response, AppError> {
+    require_editor_key(&state, &headers)?;
+    let normalized_slug = slug.trim().to_string();
+    if normalized_slug.is_empty() {
+        return Err(AppError::bad_request("slug is required"));
+    }
+    let requested_slug = request.slug.trim();
+    if !requested_slug.is_empty() && requested_slug != normalized_slug {
+        return Err(AppError::bad_request("slug in body must match path"));
+    }
+    let post = request.into_post_record(&normalized_slug)?;
+    if state
+        .repository
+        .get_post(&post.slug, &post.language)?
+        .is_none()
+    {
+        return Err(AppError::not_found("post not found"));
+    }
+    state.repository.upsert_post(&post)?;
+    Ok(Json(post).into_response())
+}
+
+async fn delete_post(
+    State(state): State<AppState>,
+    Path(slug): Path<String>,
+    Query(query): Query<DeleteQuery>,
+    headers: HeaderMap,
+) -> Result<Response, AppError> {
+    require_editor_key(&state, &headers)?;
+    let language = query
+        .lang
+        .as_deref()
+        .map(str::trim)
+        .filter(|language| !language.is_empty())
+        .ok_or_else(|| AppError::bad_request("lang query parameter is required"))?
+        .to_ascii_lowercase();
+    let normalized_slug = slug.trim();
+    if !state.repository.delete_post(normalized_slug, &language)? {
+        return Err(AppError::not_found("post not found"));
+    }
+    Ok(StatusCode::NO_CONTENT.into_response())
+}
+
 async fn api_languages(State(state): State<AppState>) -> Json<ApiLanguages> {
     Json(ApiLanguages {
         default_language: state.default_language.as_ref().to_string(),
@@ -608,6 +727,115 @@ fn sanitize_redirect_target(target: Option<&str>) -> String {
         Some(target) if target.starts_with('/') && !target.starts_with("//") => target.to_string(),
         _ => "/".to_string(),
     }
+}
+
+impl PostWriteRequest {
+    fn into_post_record(self, slug: &str) -> Result<PostRecord, AppError> {
+        let normalized_slug = slug.trim();
+        let normalized_language = self.language.trim().to_ascii_lowercase();
+        let normalized_title = self.title.trim();
+        if normalized_slug.is_empty() {
+            return Err(AppError::bad_request("slug is required"));
+        }
+        if !normalized_slug.chars().all(|character| {
+            character.is_ascii_alphanumeric() || character == '-' || character == '_'
+        }) {
+            return Err(AppError::bad_request(
+                "slug may contain only letters, digits, hyphens and underscores",
+            ));
+        }
+        if normalized_language.is_empty() {
+            return Err(AppError::bad_request("language is required"));
+        }
+        if !normalized_language
+            .chars()
+            .all(|character| character.is_ascii_alphabetic() || character == '-')
+        {
+            return Err(AppError::bad_request(
+                "language may contain only letters and hyphens",
+            ));
+        }
+        if normalized_title.is_empty() {
+            return Err(AppError::bad_request("title is required"));
+        }
+        let mut categories = Vec::new();
+        for category in self.categories {
+            let normalized_category = category.trim().to_ascii_lowercase();
+            if !normalized_category.is_empty()
+                && !categories
+                    .iter()
+                    .any(|existing| existing == &normalized_category)
+            {
+                categories.push(normalized_category);
+            }
+        }
+        let published_unix_seconds = self
+            .published_unix_seconds
+            .unwrap_or_else(current_unix_seconds);
+        let published_date = self
+            .published_date
+            .map(|date| date.trim().to_string())
+            .filter(|date| !date.is_empty())
+            .unwrap_or_else(|| format_unix_date(published_unix_seconds));
+        let source_path = if self.source_path.trim().is_empty() {
+            format!("{normalized_slug}.txt")
+        } else {
+            self.source_path.trim().to_string()
+        };
+        Ok(PostRecord {
+            slug: normalized_slug.to_string(),
+            language: normalized_language,
+            title: normalized_title.to_string(),
+            categories,
+            body_html: self.body_html,
+            source_path,
+            published_unix_seconds,
+            published_date,
+        })
+    }
+}
+
+fn require_editor_key(state: &AppState, headers: &HeaderMap) -> Result<(), AppError> {
+    let provided_key = headers
+        .get(EDITOR_KEY_HEADER)
+        .and_then(|value| value.to_str().ok())
+        .map(str::trim)
+        .filter(|value| !value.is_empty());
+    let Some(provided_key) = provided_key else {
+        return Err(AppError::unauthorized(
+            "rusty-blogger-post-editor-key header is required",
+        ));
+    };
+    let is_valid = state
+        .settings
+        .rusty_blogger_post_editor_keys
+        .iter()
+        .any(|key| constant_time_eq(key.as_bytes(), provided_key.as_bytes()));
+    if is_valid {
+        Ok(())
+    } else {
+        Err(AppError::unauthorized(
+            "invalid rusty-blogger-post-editor-key header",
+        ))
+    }
+}
+
+fn constant_time_eq(left: &[u8], right: &[u8]) -> bool {
+    if left.len() != right.len() {
+        return false;
+    }
+    let mut difference = 0u8;
+    for (left_byte, right_byte) in left.iter().zip(right) {
+        difference |= left_byte ^ right_byte;
+    }
+    difference == 0
+}
+
+fn current_unix_seconds() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_secs())
+        .unwrap_or(0)
 }
 
 fn request_base_url(headers: &HeaderMap) -> String {

@@ -59,12 +59,17 @@ target/release/rustyblogger serve \
 | `/language/{code}?next=/path` | Set language cookie and redirect |
 | `/api/posts` | Posts as JSON |
 | `/api/posts/{slug}` | Single post as JSON |
+| `POST /api/posts` | Create a post (editor key required) |
+| `PUT /api/posts/{slug}` | Update a post variant (editor key required) |
+| `DELETE /api/posts/{slug}?lang={code}` | Delete a post variant (editor key required) |
 | `/api/languages` | Available languages |
 | `/api/languages/{language}/posts` | Posts in one language |
 | `/media/*` | Media files |
 | `/health`, `/api/health` | Health check |
 
 Language selection order: `?lang=`, language cookie, `Accept-Language`, then the database default language.
+
+Post write requests require the `rusty-blogger-post-editor-key` header. Valid keys are read from the `rustyBloggerPostEditorKeys` array in `BlogSettings`.
 
 ## Database
 
@@ -75,7 +80,7 @@ Language selection order: `?lang=`, language cookie, `Accept-Language`, then the
 - `language_index` — summaries grouped by language
 - `languages` — language metadata
 - `metadata` — default language
-- `settings` — blog settings, including `posts_per_page`
+- `settings` — blog settings, including `posts_per_page` and `rustyBloggerPostEditorKeys`
 
 Generated `*.redb` files are gitignored.
 

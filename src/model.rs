@@ -54,6 +54,8 @@ pub struct BlogSettings {
     pub posts_per_page: usize,
     #[serde(default = "default_site_title")]
     pub title: String,
+    #[serde(default, rename = "rustyBloggerPostEditorKeys")]
+    pub rusty_blogger_post_editor_keys: Vec<String>,
 }
 
 fn default_posts_per_page() -> usize {
@@ -69,6 +71,7 @@ impl Default for BlogSettings {
         Self {
             posts_per_page: default_posts_per_page(),
             title: default_site_title(),
+            rusty_blogger_post_editor_keys: Vec::new(),
         }
     }
 }
