@@ -4,6 +4,8 @@ use crate::date::format_unix_date;
 use crate::model::{LanguageRecord, PostRecord};
 use crate::render::escape_html;
 
+const DEFAULT_OPEN_GRAPH_IMAGE_PATH: &str = "/media/zefir1990.jpg";
+
 pub const STYLESHEET: &str = r#"
 :root {
   color-scheme: dark;
@@ -589,6 +591,7 @@ pub struct HomePage {
     pub selected_language: String,
     pub default_language: String,
     pub categories: Vec<String>,
+    pub base_url: String,
     pub items: Vec<HomeItem>,
     pub category: Option<String>,
     pub fallback_to_default: bool,
@@ -601,6 +604,7 @@ pub struct PostPage {
     pub site_title: String,
     pub selected_language: String,
     pub categories: Vec<String>,
+    pub base_url: String,
     pub post: PostRecord,
 }
 
@@ -608,6 +612,7 @@ pub struct MessagePage {
     pub site_title: String,
     pub selected_language: String,
     pub categories: Vec<String>,
+    pub base_url: String,
     pub title: String,
     pub message: String,
 }
@@ -616,6 +621,7 @@ pub struct LanguagesPage {
     pub site_title: String,
     pub selected_language: String,
     pub categories: Vec<String>,
+    pub base_url: String,
     pub languages: Vec<LanguageRecord>,
     pub next_path: String,
 }
@@ -689,12 +695,59 @@ pub fn render_home(page: &HomePage) -> String {
         None => "/".to_string(),
     };
     let active_categories: Vec<String> = page.category.iter().cloned().collect();
+    let page_title = match &page.category {
+        Some(category) => format!(
+            "{} — {}",
+            category_label(category, &page.selected_language),
+            page.site_title
+        ),
+        None if page.current_page > 1 => {
+            format!("{} — {}", page.site_title, page.current_page)
+        }
+        None => page.site_title.clone(),
+    };
+    let description = match &page.category {
+        Some(category) => format!(
+            "{} — {}",
+            category_label(category, &page.selected_language),
+            page.site_title
+        ),
+        None => page.site_title.clone(),
+    };
+    let image_url = page
+        .items
+        .iter()
+        .find_map(|item| first_image_source(&item.post.body_html))
+        .map(|image| absolute_url(&page.base_url, &image))
+        .unwrap_or_else(|| default_open_graph_image(&page.base_url));
+    let canonical_path = match (&page.category, page.current_page) {
+        (Some(category), 1) => format!("/category/{}", urlencoding::encode(category)),
+        (Some(category), page_number) => {
+            format!(
+                "/category/{}?page={page_number}",
+                urlencoding::encode(category)
+            )
+        }
+        (None, 1) => "/".to_string(),
+        (None, page_number) => format!("/?page={page_number}"),
+    };
+    let head = render_head(&OpenGraph {
+        page_type: "website",
+        title: page_title,
+        description,
+        url: canonical_url(&page.base_url, &canonical_path, &page.selected_language),
+        image_url: Some(image_url),
+        locale: open_graph_locale(&page.selected_language),
+        site_name: page.site_title.clone(),
+        published_date: None,
+    });
     render_layout(
         &page.site_title,
         &page.selected_language,
         &page.categories,
         &active_categories,
         &next_path,
+        &head,
         &content,
     )
 }
@@ -799,12 +852,41 @@ pub fn render_post(page: &PostPage) -> String {
         page.post.body_html
     );
     let next_path = format!("/posts/{}", urlencoding::encode(&page.post.slug));
+    let post_description = truncate_description(&plain_text_from_html(&page.post.body_html), 200);
+    let description = if post_description.is_empty() {
+        format!("{} — {}", page.post.title, page.site_title)
+    } else {
+        post_description
+    };
+    let image_url = first_image_source(&page.post.body_html)
+        .map(|image| absolute_url(&page.base_url, &image))
+        .unwrap_or_else(|| default_open_graph_image(&page.base_url));
+    let published_date = if page.post.published_date.is_empty() {
+        None
+    } else {
+        Some(page.post.published_date.clone())
+    };
+    let head = render_head(&OpenGraph {
+        page_type: "article",
+        title: if page.post.title == page.site_title {
+            page.site_title.clone()
+        } else {
+            format!("{} — {}", page.post.title, page.site_title)
+        },
+        description,
+        url: canonical_url(&page.base_url, &next_path, &page.post.language),
+        image_url: Some(image_url),
+        locale: open_graph_locale(&page.post.language),
+        site_name: page.site_title.clone(),
+        published_date,
+    });
     render_layout(
         &page.site_title,
         &page.selected_language,
         &page.categories,
         &page.post.categories,
         &next_path,
+        &head,
         &content,
     )
 }
@@ -816,12 +898,23 @@ pub fn render_message(page: &MessagePage) -> String {
         escape_html(&page.message),
         escape_html(back_to_posts_label(&page.selected_language))
     );
+    let head = render_head(&OpenGraph {
+        page_type: "website",
+        title: format!("{} — {}", page.title, page.site_title),
+        description: page.message.clone(),
+        url: canonical_url(&page.base_url, "/", &page.selected_language),
+        image_url: Some(default_open_graph_image(&page.base_url)),
+        locale: open_graph_locale(&page.selected_language),
+        site_name: page.site_title.clone(),
+        published_date: None,
+    });
     render_layout(
         &page.site_title,
         &page.selected_language,
         &page.categories,
         &[],
         "/",
+        &head,
         &content,
     )
 }
@@ -858,14 +951,163 @@ pub fn render_languages(page: &LanguagesPage) -> String {
         );
     }
     content.push_str("</ul>");
+    let languages_title = choose_language_label(&page.selected_language);
+    let head = render_head(&OpenGraph {
+        page_type: "website",
+        title: format!("{} — {}", languages_title, page.site_title),
+        description: languages_title.to_string(),
+        url: canonical_url(&page.base_url, "/languages", &page.selected_language),
+        image_url: Some(default_open_graph_image(&page.base_url)),
+        locale: open_graph_locale(&page.selected_language),
+        site_name: page.site_title.clone(),
+        published_date: None,
+    });
     render_layout(
         &page.site_title,
         &page.selected_language,
         &page.categories,
         &[],
         &page.next_path,
+        &head,
         &content,
     )
+}
+
+struct OpenGraph {
+    page_type: &'static str,
+    title: String,
+    description: String,
+    url: String,
+    image_url: Option<String>,
+    locale: &'static str,
+    site_name: String,
+    published_date: Option<String>,
+}
+
+fn render_head(open_graph: &OpenGraph) -> String {
+    let escaped_title = escape_html(&open_graph.title);
+    let escaped_description = escape_html(&open_graph.description);
+    let escaped_url = escape_html(&open_graph.url);
+    let escaped_site_name = escape_html(&open_graph.site_name);
+    let mut head = format!(
+        "<title>{escaped_title}</title><meta name=\"description\" content=\"{escaped_description}\"/><link rel=\"canonical\" href=\"{escaped_url}\"/><meta property=\"og:type\" content=\"{}\"/><meta property=\"og:title\" content=\"{escaped_title}\"/><meta property=\"og:description\" content=\"{escaped_description}\"/><meta property=\"og:url\" content=\"{escaped_url}\"/><meta property=\"og:site_name\" content=\"{escaped_site_name}\"/><meta property=\"og:locale\" content=\"{}\"/>",
+        open_graph.page_type, open_graph.locale
+    );
+    if let Some(image_url) = &open_graph.image_url {
+        let escaped_image_url = escape_html(image_url);
+        let _ = write!(
+            head,
+            "<meta property=\"og:image\" content=\"{escaped_image_url}\"/><meta property=\"og:logo\" content=\"{escaped_image_url}\"/><meta name=\"twitter:card\" content=\"summary_large_image\"/><meta name=\"twitter:image\" content=\"{escaped_image_url}\"/>"
+        );
+    } else {
+        head.push_str("<meta name=\"twitter:card\" content=\"summary\"/>");
+    }
+    let _ = write!(
+        head,
+        "<meta name=\"twitter:title\" content=\"{escaped_title}\"/><meta name=\"twitter:description\" content=\"{escaped_description}\"/>"
+    );
+    if let Some(published_date) = &open_graph.published_date {
+        let _ = write!(
+            head,
+            "<meta property=\"article:published_time\" content=\"{}\"/>",
+            escape_html(published_date)
+        );
+    }
+    head
+}
+
+fn plain_text_from_html(html: &str) -> String {
+    let mut text = String::new();
+    let mut inside_tag = false;
+    for character in html.chars() {
+        match character {
+            '<' => inside_tag = true,
+            '>' => {
+                inside_tag = false;
+                text.push(' ');
+            }
+            _ if inside_tag => {}
+            _ => text.push(character),
+        }
+    }
+    let collapsed_text = text.split_whitespace().collect::<Vec<_>>().join(" ");
+    decode_html_entities(&collapsed_text)
+}
+
+fn decode_html_entities(text: &str) -> String {
+    text.replace("&nbsp;", " ")
+        .replace("&quot;", "\"")
+        .replace("&#39;", "'")
+        .replace("&lt;", "<")
+        .replace("&gt;", ">")
+        .replace("&amp;", "&")
+}
+
+fn truncate_description(text: &str, max_characters: usize) -> String {
+    let trimmed_text = text.trim();
+    if trimmed_text.chars().count() <= max_characters {
+        return trimmed_text.to_string();
+    }
+    let truncated_text: String = trimmed_text.chars().take(max_characters).collect();
+    format!("{}…", truncated_text.trim_end())
+}
+
+fn first_image_source(html: &str) -> Option<String> {
+    let lower_html = html.to_ascii_lowercase();
+    let image_tag_start = lower_html.find("<img")?;
+    let image_tag_end = lower_html[image_tag_start..].find('>')? + image_tag_start;
+    let image_tag = &html[image_tag_start..image_tag_end];
+    let image_tag_lower = &lower_html[image_tag_start..image_tag_end];
+    for quote in ['"', '\''] {
+        let marker = format!("src={quote}");
+        if let Some(source_start) = image_tag_lower.find(&marker) {
+            let value_start = source_start + marker.len();
+            let remaining = &image_tag[value_start..];
+            if let Some(value_end) = remaining.find(quote) {
+                return Some(remaining[..value_end].to_string());
+            }
+        }
+    }
+    None
+}
+
+fn absolute_url(base_url: &str, url: &str) -> String {
+    if url.starts_with("http://") || url.starts_with("https://") {
+        url.to_string()
+    } else if let Some(protocol_relative_url) = url.strip_prefix("//") {
+        let scheme = base_url.split("://").next().unwrap_or("https");
+        format!("{scheme}://{protocol_relative_url}")
+    } else if url.starts_with('/') {
+        format!("{base_url}{url}")
+    } else {
+        format!("{base_url}/{url}")
+    }
+}
+
+fn default_open_graph_image(base_url: &str) -> String {
+    absolute_url(base_url, DEFAULT_OPEN_GRAPH_IMAGE_PATH)
+}
+
+fn canonical_url(base_url: &str, path: &str, language: &str) -> String {
+    let separator = if path.contains('?') { '&' } else { '?' };
+    format!(
+        "{base_url}{path}{separator}lang={}",
+        urlencoding::encode(language)
+    )
+}
+
+fn open_graph_locale(language: &str) -> &'static str {
+    match language {
+        "ru" => "ru_RU",
+        "zh" => "zh_CN",
+        "de" => "de_DE",
+        "ja" => "ja_JP",
+        "fr" => "fr_FR",
+        "es" => "es_ES",
+        "pt" => "pt_PT",
+        "hi" => "hi_IN",
+        _ => "en_US",
+    }
 }
 
 fn render_layout(
@@ -874,6 +1116,7 @@ fn render_layout(
     categories: &[String],
     active_categories: &[String],
     next_path: &str,
+    head: &str,
     content: &str,
 ) -> String {
     let mut category_buttons = String::new();
@@ -902,9 +1145,8 @@ fn render_layout(
     let mut html = String::new();
     let _ = write!(
         html,
-        "<!doctype html><html lang=\"{}\"><head><meta charset=\"utf-8\"/><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"/><base target=\"_blank\"/><title>{}</title><link rel=\"stylesheet\" href=\"/assets/style.css\"/></head><body><header class=\"site-header\"><a class=\"site-title\" href=\"/\" target=\"_self\">{}</a><div class=\"site-actions\"><nav class=\"category-nav\" aria-label=\"{}\">{category_buttons}</nav><nav class=\"language-switcher\" aria-label=\"{}\"><a class=\"language-toggle\" href=\"/languages?next={}\" hreflang=\"{}\" title=\"{}\" aria-label=\"{}\" target=\"_self\">{}</a></nav></div></header>",
+        "<!doctype html><html lang=\"{}\"><head><meta charset=\"utf-8\"/><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"/><base target=\"_blank\"/>{head}<link rel=\"stylesheet\" href=\"/assets/style.css\"/></head><body><header class=\"site-header\"><a class=\"site-title\" href=\"/\" target=\"_self\">{}</a><div class=\"site-actions\"><nav class=\"category-nav\" aria-label=\"{}\">{category_buttons}</nav><nav class=\"language-switcher\" aria-label=\"{}\"><a class=\"language-toggle\" href=\"/languages?next={}\" hreflang=\"{}\" title=\"{}\" aria-label=\"{}\" target=\"_self\">{}</a></nav></div></header>",
         escape_html(selected_language),
-        escape_html(site_title),
         escape_html(site_title),
         escape_html(categories_label(selected_language)),
         escape_html(choose_language_label(selected_language)),

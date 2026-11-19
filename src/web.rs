@@ -172,7 +172,8 @@ async fn home(
     headers: HeaderMap,
 ) -> Result<Response, AppError> {
     let selected_language = resolve_language(&state, &query, &headers);
-    let page = build_home_page(&state, &selected_language, None, query.page)?;
+    let base_url = request_base_url(&headers);
+    let page = build_home_page(&state, &selected_language, None, query.page, &base_url)?;
     Ok(Html(templates::render_home(&page)).into_response())
 }
 
@@ -183,7 +184,14 @@ async fn category_page(
     headers: HeaderMap,
 ) -> Result<Response, AppError> {
     let selected_language = resolve_language(&state, &query, &headers);
-    let page = build_home_page(&state, &selected_language, Some(&category), query.page)?;
+    let base_url = request_base_url(&headers);
+    let page = build_home_page(
+        &state,
+        &selected_language,
+        Some(&category),
+        query.page,
+        &base_url,
+    )?;
     Ok(Html(templates::render_home(&page)).into_response())
 }
 
@@ -194,8 +202,14 @@ async fn post_page(
     headers: HeaderMap,
 ) -> Result<Response, AppError> {
     let requested_language = resolve_language(&state, &query, &headers);
+    let base_url = request_base_url(&headers);
     let Some(slug_record) = state.repository.get_slug(&slug)? else {
-        return Ok(render_not_found(&state, &requested_language, &slug));
+        return Ok(render_not_found(
+            &state,
+            &requested_language,
+            &slug,
+            &base_url,
+        ));
     };
     let selected_language = if slug_record.languages.contains(&requested_language) {
         requested_language.clone()
@@ -203,18 +217,29 @@ async fn post_page(
         slug_record.default_language.clone()
     };
     let Some(post) = state.repository.get_post(&slug, &selected_language)? else {
-        return Ok(render_not_found(&state, &requested_language, &slug));
+        return Ok(render_not_found(
+            &state,
+            &requested_language,
+            &slug,
+            &base_url,
+        ));
     };
     let page = PostPage {
         site_title: state.site_title.as_ref().to_string(),
         selected_language: requested_language,
         categories: (*state.categories).clone(),
+        base_url,
         post,
     };
     Ok(Html(templates::render_post(&page)).into_response())
 }
 
-fn render_not_found(state: &AppState, selected_language: &str, slug: &str) -> Response {
+fn render_not_found(
+    state: &AppState,
+    selected_language: &str,
+    slug: &str,
+    base_url: &str,
+) -> Response {
     let (title, message) = templates::post_not_found_text(selected_language, slug);
     render_message_page(
         state,
@@ -222,6 +247,7 @@ fn render_not_found(state: &AppState, selected_language: &str, slug: &str) -> Re
         title,
         message,
         StatusCode::NOT_FOUND,
+        base_url,
     )
 }
 
@@ -231,6 +257,7 @@ async fn not_found_page(
     headers: HeaderMap,
 ) -> Response {
     let selected_language = resolve_language(&state, &query, &headers);
+    let base_url = request_base_url(&headers);
     let (title, message) = templates::page_not_found_text(&selected_language);
     render_message_page(
         &state,
@@ -238,6 +265,7 @@ async fn not_found_page(
         title.to_string(),
         message.to_string(),
         StatusCode::NOT_FOUND,
+        &base_url,
     )
 }
 
@@ -247,6 +275,7 @@ async fn method_not_allowed_page(
     headers: HeaderMap,
 ) -> Response {
     let selected_language = resolve_language(&state, &query, &headers);
+    let base_url = request_base_url(&headers);
     let (title, message) = templates::method_not_allowed_text(&selected_language);
     render_message_page(
         &state,
@@ -254,6 +283,7 @@ async fn method_not_allowed_page(
         title.to_string(),
         message.to_string(),
         StatusCode::METHOD_NOT_ALLOWED,
+        &base_url,
     )
 }
 
@@ -263,11 +293,13 @@ fn render_message_page(
     title: String,
     message: String,
     status: StatusCode,
+    base_url: &str,
 ) -> Response {
     let page = MessagePage {
         site_title: state.site_title.as_ref().to_string(),
         selected_language: selected_language.to_string(),
         categories: (*state.categories).clone(),
+        base_url: base_url.to_string(),
         title,
         message,
     };
@@ -312,6 +344,7 @@ async fn languages_page(
         site_title: state.site_title.as_ref().to_string(),
         selected_language,
         categories: (*state.categories).clone(),
+        base_url: request_base_url(&headers),
         languages: (*state.languages).clone(),
         next_path: sanitize_redirect_target(query.next.as_deref()),
     };
@@ -409,6 +442,7 @@ fn build_home_page(
     selected_language: &str,
     category: Option<&str>,
     requested_page: Option<usize>,
+    base_url: &str,
 ) -> Result<HomePage, AppError> {
     let items = collect_home_items(state, selected_language, category)?;
     let total_items = items.len();
@@ -430,6 +464,7 @@ fn build_home_page(
         selected_language: selected_language.to_string(),
         default_language: state.default_language.as_ref().to_string(),
         categories: (*state.categories).clone(),
+        base_url: base_url.to_string(),
         items: page_items,
         category: category.map(str::to_string),
         fallback_to_default,
@@ -572,5 +607,57 @@ fn sanitize_redirect_target(target: Option<&str>) -> String {
     match target {
         Some(target) if target.starts_with('/') && !target.starts_with("//") => target.to_string(),
         _ => "/".to_string(),
+    }
+}
+
+fn request_base_url(headers: &HeaderMap) -> String {
+    let scheme = request_scheme(headers);
+    let host = headers
+        .get(header::HOST)
+        .and_then(|value| value.to_str().ok())
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .unwrap_or("localhost");
+    format!("{scheme}://{host}")
+}
+
+fn request_scheme(headers: &HeaderMap) -> &'static str {
+    if let Some(forwarded_proto) = headers
+        .get("x-forwarded-proto")
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| value.split(',').next())
+        .map(str::trim)
+    {
+        if forwarded_proto.eq_ignore_ascii_case("https") {
+            return "https";
+        }
+        if forwarded_proto.eq_ignore_ascii_case("http") {
+            return "http";
+        }
+    }
+    if let Some(forwarded) = headers
+        .get("forwarded")
+        .and_then(|value| value.to_str().ok())
+    {
+        for part in forwarded.split(';') {
+            if let Some(proto) = part.trim().strip_prefix("proto=") {
+                let proto = proto.trim_matches('"');
+                if proto.eq_ignore_ascii_case("https") {
+                    return "https";
+                }
+                if proto.eq_ignore_ascii_case("http") {
+                    return "http";
+                }
+            }
+        }
+    }
+    let host = headers
+        .get(header::HOST)
+        .and_then(|value| value.to_str().ok())
+        .unwrap_or("");
+    if host.starts_with("localhost") || host.starts_with("127.0.0.1") || host.starts_with("[::1]") {
+        "http"
+    } else {
+        "https"
     }
 }
