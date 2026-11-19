@@ -1,3 +1,4 @@
+use std::collections::BTreeSet;
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -33,6 +34,7 @@ struct AppState {
     site_title: Arc<str>,
     default_language: Arc<str>,
     languages: Arc<Vec<LanguageRecord>>,
+    categories: Arc<Vec<String>>,
     settings: BlogSettings,
 }
 
@@ -126,6 +128,7 @@ pub async fn serve(options: ServeOptions) -> Result<()> {
         languages.insert(0, default_language_record);
     }
     let settings = repository.settings()?;
+    let categories = collect_categories(repository.as_ref(), &languages)?;
     let site_title = options
         .site_title
         .filter(|title| !title.trim().is_empty())
@@ -135,6 +138,7 @@ pub async fn serve(options: ServeOptions) -> Result<()> {
         site_title: Arc::from(site_title),
         default_language: Arc::from(default_language),
         languages: Arc::new(languages),
+        categories: Arc::new(categories),
         settings,
     };
     let router = Router::new()
@@ -204,6 +208,7 @@ async fn post_page(
     let page = PostPage {
         site_title: state.site_title.as_ref().to_string(),
         selected_language: requested_language,
+        categories: (*state.categories).clone(),
         post,
     };
     Ok(Html(templates::render_post(&page)).into_response())
@@ -262,6 +267,7 @@ fn render_message_page(
     let page = MessagePage {
         site_title: state.site_title.as_ref().to_string(),
         selected_language: selected_language.to_string(),
+        categories: (*state.categories).clone(),
         title,
         message,
     };
@@ -305,6 +311,7 @@ async fn languages_page(
     let page = LanguagesPage {
         site_title: state.site_title.as_ref().to_string(),
         selected_language,
+        categories: (*state.categories).clone(),
         languages: (*state.languages).clone(),
         next_path: sanitize_redirect_target(query.next.as_deref()),
     };
@@ -422,6 +429,7 @@ fn build_home_page(
         site_title: state.site_title.as_ref().to_string(),
         selected_language: selected_language.to_string(),
         default_language: state.default_language.as_ref().to_string(),
+        categories: (*state.categories).clone(),
         items: page_items,
         category: category.map(str::to_string),
         fallback_to_default,
@@ -476,6 +484,24 @@ fn collect_home_items(
             .then_with(|| left.post.title.cmp(&right.post.title))
     });
     Ok(items)
+}
+
+fn collect_categories(
+    repository: &dyn BlogRepository,
+    languages: &[LanguageRecord],
+) -> Result<Vec<String>> {
+    let mut categories = BTreeSet::new();
+    for language in languages {
+        for post in repository.list_posts(&language.code)? {
+            for category in post.categories {
+                let trimmed_category = category.trim();
+                if !trimmed_category.is_empty() {
+                    categories.insert(trimmed_category.to_string());
+                }
+            }
+        }
+    }
+    Ok(categories.into_iter().collect())
 }
 
 fn resolve_language(state: &AppState, query: &LanguageQuery, headers: &HeaderMap) -> String {

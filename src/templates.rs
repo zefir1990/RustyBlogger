@@ -76,6 +76,36 @@ a:hover { color: var(--accent-secondary); }
   background-clip: text;
 }
 .site-title:hover { filter: brightness(1.15); color: transparent; }
+.site-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.6rem;
+}
+.category-nav { display: flex; flex-wrap: wrap; gap: 0.4rem; }
+.category-button {
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 0.34rem 0.85rem;
+  font-size: 0.78rem;
+  font-weight: 550;
+  text-decoration: none;
+  color: var(--muted);
+  background: rgba(255, 255, 255, 0.03);
+  transition: color 160ms ease, border-color 160ms ease, background 160ms ease;
+}
+.category-button:hover {
+  color: var(--text);
+  border-color: rgba(255, 255, 255, 0.2);
+  background: rgba(255, 255, 255, 0.07);
+}
+.category-button.current {
+  border-color: rgba(125, 211, 252, 0.45);
+  background: linear-gradient(135deg, rgba(125, 211, 252, 0.18), rgba(167, 139, 250, 0.18));
+  color: #dceeff;
+  box-shadow: 0 0 20px rgba(125, 211, 252, 0.12);
+}
 .language-switcher { display: flex; align-items: center; }
 .language-toggle {
   display: inline-flex;
@@ -465,6 +495,7 @@ footer a:hover { color: var(--accent); }
   html { font-size: 16px; }
   .site-header { padding: 0.85rem 1rem; }
   .language-toggle { width: 2.2rem; height: 2.2rem; font-size: 1rem; }
+  .category-button { padding: 0.28rem 0.65rem; font-size: 0.72rem; }
   main { padding-left: 0.6rem; padding-right: 0.6rem; }
   .post-card, .post { padding: 1.15rem; border-radius: 18px; }
   .post-card .card-title { font-size: clamp(1.4rem, 7vw, 2rem); }
@@ -557,6 +588,7 @@ pub struct HomePage {
     pub site_title: String,
     pub selected_language: String,
     pub default_language: String,
+    pub categories: Vec<String>,
     pub items: Vec<HomeItem>,
     pub category: Option<String>,
     pub fallback_to_default: bool,
@@ -568,12 +600,14 @@ pub struct HomePage {
 pub struct PostPage {
     pub site_title: String,
     pub selected_language: String,
+    pub categories: Vec<String>,
     pub post: PostRecord,
 }
 
 pub struct MessagePage {
     pub site_title: String,
     pub selected_language: String,
+    pub categories: Vec<String>,
     pub title: String,
     pub message: String,
 }
@@ -581,20 +615,13 @@ pub struct MessagePage {
 pub struct LanguagesPage {
     pub site_title: String,
     pub selected_language: String,
+    pub categories: Vec<String>,
     pub languages: Vec<LanguageRecord>,
     pub next_path: String,
 }
 
 pub fn render_home(page: &HomePage) -> String {
     let mut content = String::new();
-    if let Some(category) = &page.category {
-        let localized_category = category_label(category, &page.selected_language);
-        let _ = write!(
-            content,
-            "<h1>Posts in {}</h1>",
-            escape_html(&localized_category)
-        );
-    }
     if page.fallback_to_default {
         let notice = fallback_notice_text(
             &page.selected_language,
@@ -661,9 +688,12 @@ pub fn render_home(page: &HomePage) -> String {
         Some(category) => format!("/category/{}", urlencoding::encode(category)),
         None => "/".to_string(),
     };
+    let active_categories: Vec<String> = page.category.iter().cloned().collect();
     render_layout(
         &page.site_title,
         &page.selected_language,
+        &page.categories,
+        &active_categories,
         &next_path,
         &content,
     )
@@ -772,6 +802,8 @@ pub fn render_post(page: &PostPage) -> String {
     render_layout(
         &page.site_title,
         &page.selected_language,
+        &page.categories,
+        &page.post.categories,
         &next_path,
         &content,
     )
@@ -784,7 +816,14 @@ pub fn render_message(page: &MessagePage) -> String {
         escape_html(&page.message),
         escape_html(back_to_posts_label(&page.selected_language))
     );
-    render_layout(&page.site_title, &page.selected_language, "/", &content)
+    render_layout(
+        &page.site_title,
+        &page.selected_language,
+        &page.categories,
+        &[],
+        "/",
+        &content,
+    )
 }
 
 pub fn render_languages(page: &LanguagesPage) -> String {
@@ -822,6 +861,8 @@ pub fn render_languages(page: &LanguagesPage) -> String {
     render_layout(
         &page.site_title,
         &page.selected_language,
+        &page.categories,
+        &[],
         &page.next_path,
         &content,
     )
@@ -830,16 +871,42 @@ pub fn render_languages(page: &LanguagesPage) -> String {
 fn render_layout(
     site_title: &str,
     selected_language: &str,
+    categories: &[String],
+    active_categories: &[String],
     next_path: &str,
     content: &str,
 ) -> String {
+    let mut category_buttons = String::new();
+    for category in categories {
+        let is_current = active_categories.iter().any(|active| active == category);
+        let class_name = if is_current {
+            "category-button current"
+        } else {
+            "category-button"
+        };
+        let current_attribute = if is_current {
+            " aria-current=\"true\""
+        } else {
+            ""
+        };
+        let _ = write!(
+            category_buttons,
+            "<a class=\"{}\" href=\"/category/{}?lang={}\"{} target=\"_self\">{}</a>",
+            class_name,
+            urlencoding::encode(category),
+            urlencoding::encode(selected_language),
+            current_attribute,
+            escape_html(&category_label(category, selected_language))
+        );
+    }
     let mut html = String::new();
     let _ = write!(
         html,
-        "<!doctype html><html lang=\"{}\"><head><meta charset=\"utf-8\"/><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"/><base target=\"_blank\"/><title>{}</title><link rel=\"stylesheet\" href=\"/assets/style.css\"/></head><body><header class=\"site-header\"><a class=\"site-title\" href=\"/\" target=\"_self\">{}</a><nav class=\"language-switcher\" aria-label=\"{}\"><a class=\"language-toggle\" href=\"/languages?next={}\" hreflang=\"{}\" title=\"{}\" aria-label=\"{}\" target=\"_self\">{}</a></nav></header>",
+        "<!doctype html><html lang=\"{}\"><head><meta charset=\"utf-8\"/><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"/><base target=\"_blank\"/><title>{}</title><link rel=\"stylesheet\" href=\"/assets/style.css\"/></head><body><header class=\"site-header\"><a class=\"site-title\" href=\"/\" target=\"_self\">{}</a><div class=\"site-actions\"><nav class=\"category-nav\" aria-label=\"{}\">{category_buttons}</nav><nav class=\"language-switcher\" aria-label=\"{}\"><a class=\"language-toggle\" href=\"/languages?next={}\" hreflang=\"{}\" title=\"{}\" aria-label=\"{}\" target=\"_self\">{}</a></nav></div></header>",
         escape_html(selected_language),
         escape_html(site_title),
         escape_html(site_title),
+        escape_html(categories_label(selected_language)),
         escape_html(choose_language_label(selected_language)),
         urlencoding::encode(next_path),
         escape_html(selected_language),
@@ -1223,27 +1290,80 @@ fn translation_notice_text(
     }
 }
 
+struct CategoryLabels {
+    about: &'static str,
+    games: &'static str,
+    notes: &'static str,
+    software: &'static str,
+}
+
+fn category_labels(language: &str) -> CategoryLabels {
+    match language {
+        "ru" => CategoryLabels {
+            about: "О нас",
+            games: "Игры",
+            notes: "Заметки",
+            software: "Софт",
+        },
+        "zh" => CategoryLabels {
+            about: "关于",
+            games: "游戏",
+            notes: "笔记",
+            software: "软件",
+        },
+        "de" => CategoryLabels {
+            about: "Über",
+            games: "Spiele",
+            notes: "Notizen",
+            software: "Software",
+        },
+        "ja" => CategoryLabels {
+            about: "概要",
+            games: "ゲーム",
+            notes: "メモ",
+            software: "ソフトウェア",
+        },
+        "fr" => CategoryLabels {
+            about: "À propos",
+            games: "Jeux",
+            notes: "Notes",
+            software: "Logiciel",
+        },
+        "es" => CategoryLabels {
+            about: "Acerca de",
+            games: "Juegos",
+            notes: "Notas",
+            software: "Software",
+        },
+        "pt" => CategoryLabels {
+            about: "Sobre",
+            games: "Jogos",
+            notes: "Notas",
+            software: "Software",
+        },
+        "hi" => CategoryLabels {
+            about: "परिचय",
+            games: "खेल",
+            notes: "नोट्स",
+            software: "सॉफ़्टवेयर",
+        },
+        _ => CategoryLabels {
+            about: "About",
+            games: "Games",
+            notes: "Notes",
+            software: "Software",
+        },
+    }
+}
+
 fn category_label(category: &str, language: &str) -> String {
     let normalized_category = category.trim().to_ascii_lowercase();
-    let localized_category = match (normalized_category.as_str(), language) {
-        ("software", "ru") => "Софт",
-        ("notes", "ru") => "Заметки",
-        ("software", "zh") => "软件",
-        ("notes", "zh") => "笔记",
-        ("software", "de") => "Software",
-        ("notes", "de") => "Notizen",
-        ("software", "ja") => "ソフトウェア",
-        ("notes", "ja") => "メモ",
-        ("software", "fr") => "Logiciel",
-        ("notes", "fr") => "Notes",
-        ("software", "es") => "Software",
-        ("notes", "es") => "Notas",
-        ("software", "pt") => "Software",
-        ("notes", "pt") => "Notas",
-        ("software", "hi") => "सॉफ़्टवेयर",
-        ("notes", "hi") => "नोट्स",
-        ("software", _) => "Software",
-        ("notes", _) => "Notes",
+    let labels = category_labels(language);
+    let localized_category = match normalized_category.as_str() {
+        "about" => labels.about,
+        "games" => labels.games,
+        "notes" => labels.notes,
+        "software" => labels.software,
         _ => return capitalize_first(category),
     };
     localized_category.to_string()
@@ -1285,6 +1405,20 @@ fn choose_language_label(language: &str) -> &'static str {
         "pt" => "Escolher idioma",
         "hi" => "भाषा चुनें",
         _ => "Choose language",
+    }
+}
+
+fn categories_label(language: &str) -> &'static str {
+    match language {
+        "ru" => "Категории",
+        "zh" => "分类",
+        "de" => "Kategorien",
+        "ja" => "カテゴリ",
+        "fr" => "Catégories",
+        "es" => "Categorías",
+        "pt" => "Categorias",
+        "hi" => "श्रेणियाँ",
+        _ => "Categories",
     }
 }
 
