@@ -685,9 +685,10 @@ pub fn render_home(page: &HomePage) -> String {
             }
             let _ = write!(
                 content,
-                "</div><div class=\"post-body\">{}</div><p><a class=\"permalink\" href=\"{}\" target=\"_self\">Permalink</a></p></li>",
+                "</div><div class=\"post-body\">{}</div><p><a class=\"permalink\" href=\"{}\" target=\"_self\">{}</a></p></li>",
                 post.body_html,
-                escape_html(&post_href)
+                escape_html(&post_href),
+                escape_html(permalink_label(&page.selected_language))
             );
         }
         content.push_str("</ul>");
@@ -1485,6 +1486,20 @@ fn back_to_posts_label(language: &str) -> &'static str {
         "pt" => "Voltar às publicações",
         "hi" => "पोस्ट पर वापस जाएँ",
         _ => "Back to posts",
+    }
+}
+
+fn permalink_label(language: &str) -> &'static str {
+    match language {
+        "ru" => "Постоянная ссылка",
+        "zh" => "永久链接",
+        "de" => "Dauerlink",
+        "ja" => "パーマリンク",
+        "fr" => "Permalien",
+        "es" => "Enlace permanente",
+        "pt" => "Link permanente",
+        "hi" => "स्थायी लिंक",
+        _ => "Permalink",
     }
 }
 
