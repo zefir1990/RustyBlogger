@@ -941,10 +941,26 @@ pub fn render_post(page: &PostPage) -> String {
     }
     let _ = write!(
         content,
-        "<div class=\"post-body\">{}</div></article>",
+        "<div class=\"post-body\">{}</div>",
         page.post.body_html
     );
+    let localized_share_labels = share_labels(&page.selected_language);
     let next_path = format!("/posts/{}", urlencoding::encode(&page.post.slug));
+    let share_url = format!(
+        "{}{}?lang={}",
+        page.base_url,
+        next_path,
+        urlencoding::encode(&page.selected_language)
+    );
+    let _ = write!(
+        content,
+        "<p class=\"post-actions\"><button type=\"button\" class=\"share-button\" data-share-url=\"{}\" data-share-title=\"{}\" data-copied-label=\"{}\" data-failed-label=\"{}\">{}</button></p></article>",
+        escape_html(&share_url),
+        escape_html(&page.post.title),
+        escape_html(localized_share_labels.copied),
+        escape_html(localized_share_labels.failed),
+        escape_html(localized_share_labels.share)
+    );
     let post_description = truncate_description(&plain_text_from_html(&page.post.body_html), 200);
     let description = if post_description.is_empty() {
         format!("{} — {}", page.post.title, page.site_title)
