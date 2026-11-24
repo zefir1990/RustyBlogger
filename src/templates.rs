@@ -846,23 +846,39 @@ pub fn render_home(page: &HomePage) -> String {
 }
 
 fn render_pagination(content: &mut String, page: &HomePage) {
+    let labels = pagination_labels(&page.selected_language);
+    let summary = pagination_summary_text(
+        &page.selected_language,
+        page.current_page,
+        page.total_pages,
+        page.posts_per_page,
+    );
     let _ = write!(
         content,
-        "<p class=\"pagination-summary\">Page {} of {} · {} posts per page</p>",
-        page.current_page, page.total_pages, page.posts_per_page
+        "<p class=\"pagination-summary\">{}</p>",
+        escape_html(&summary)
     );
     if page.total_pages <= 1 {
         return;
     }
-    content.push_str("<nav class=\"pagination\" aria-label=\"Pagination\">");
+    let _ = write!(
+        content,
+        "<nav class=\"pagination\" aria-label=\"{}\">",
+        escape_html(labels.navigation)
+    );
     if page.current_page > 1 {
         let _ = write!(
             content,
-            "<a href=\"{}\" rel=\"prev\" target=\"_self\">Previous</a>",
-            escape_html(&pagination_href(page, page.current_page - 1))
+            "<a href=\"{}\" rel=\"prev\" target=\"_self\">{}</a>",
+            escape_html(&pagination_href(page, page.current_page - 1)),
+            escape_html(labels.previous)
         );
     } else {
-        content.push_str("<span class=\"disabled\">Previous</span>");
+        let _ = write!(
+            content,
+            "<span class=\"disabled\">{}</span>",
+            escape_html(labels.previous)
+        );
     }
     for page_number in 1..=page.total_pages {
         if page_number == page.current_page {
@@ -878,11 +894,16 @@ fn render_pagination(content: &mut String, page: &HomePage) {
     if page.current_page < page.total_pages {
         let _ = write!(
             content,
-            "<a href=\"{}\" rel=\"next\" target=\"_self\">Next</a>",
-            escape_html(&pagination_href(page, page.current_page + 1))
+            "<a href=\"{}\" rel=\"next\" target=\"_self\">{}</a>",
+            escape_html(&pagination_href(page, page.current_page + 1)),
+            escape_html(labels.next)
         );
     } else {
-        content.push_str("<span class=\"disabled\">Next</span>");
+        let _ = write!(
+            content,
+            "<span class=\"disabled\">{}</span>",
+            escape_html(labels.next)
+        );
     }
     content.push_str("</nav>");
 }
@@ -1645,6 +1666,93 @@ fn share_labels(language: &str) -> ShareLabels {
             copied: "Link copied",
             failed: "Share failed",
         },
+    }
+}
+
+struct PaginationLabels {
+    previous: &'static str,
+    next: &'static str,
+    navigation: &'static str,
+}
+
+fn pagination_labels(language: &str) -> PaginationLabels {
+    match language {
+        "ru" => PaginationLabels {
+            previous: "Назад",
+            next: "Далее",
+            navigation: "Пагинация",
+        },
+        "zh" => PaginationLabels {
+            previous: "上一页",
+            next: "下一页",
+            navigation: "分页",
+        },
+        "de" => PaginationLabels {
+            previous: "Zurück",
+            next: "Weiter",
+            navigation: "Seitennavigation",
+        },
+        "ja" => PaginationLabels {
+            previous: "前へ",
+            next: "次へ",
+            navigation: "ページ送り",
+        },
+        "fr" => PaginationLabels {
+            previous: "Précédent",
+            next: "Suivant",
+            navigation: "Pagination",
+        },
+        "es" => PaginationLabels {
+            previous: "Anterior",
+            next: "Siguiente",
+            navigation: "Paginación",
+        },
+        "pt" => PaginationLabels {
+            previous: "Anterior",
+            next: "Seguinte",
+            navigation: "Paginação",
+        },
+        "hi" => PaginationLabels {
+            previous: "पिछला",
+            next: "अगला",
+            navigation: "पृष्ठ नेविगेशन",
+        },
+        _ => PaginationLabels {
+            previous: "Previous",
+            next: "Next",
+            navigation: "Pagination",
+        },
+    }
+}
+
+fn pagination_summary_text(
+    language: &str,
+    current_page: usize,
+    total_pages: usize,
+    posts_per_page: usize,
+) -> String {
+    match language {
+        "ru" => format!(
+            "Страница {current_page} из {total_pages} · постов на странице: {posts_per_page}"
+        ),
+        "zh" => format!("第 {current_page} 页，共 {total_pages} 页 · 每页 {posts_per_page} 篇文章"),
+        "de" => {
+            format!("Seite {current_page} von {total_pages} · Beiträge pro Seite: {posts_per_page}")
+        }
+        "ja" => format!(
+            "{total_pages} ページ中 {current_page} ページ · 1 ページあたり {posts_per_page} 件"
+        ),
+        "fr" => {
+            format!("Page {current_page} sur {total_pages} · articles par page : {posts_per_page}")
+        }
+        "es" => format!(
+            "Página {current_page} de {total_pages} · publicaciones por página: {posts_per_page}"
+        ),
+        "pt" => format!(
+            "Página {current_page} de {total_pages} · publicações por página: {posts_per_page}"
+        ),
+        "hi" => format!("पृष्ठ {current_page} / {total_pages} · प्रति पृष्ठ {posts_per_page} पोस्ट"),
+        _ => format!("Page {current_page} of {total_pages} · {posts_per_page} posts per page"),
     }
 }
 
