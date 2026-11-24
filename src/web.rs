@@ -16,6 +16,7 @@ use tower_http::services::ServeDir;
 use tower_http::trace::TraceLayer;
 use tracing::error;
 
+use crate::assets;
 use crate::date::format_unix_date;
 use crate::model::{BlogSettings, LanguageRecord, PostRecord, PostSummary};
 use crate::render::content_hash;
@@ -28,6 +29,7 @@ const EDITOR_KEY_HEADER: &str = "rusty-blogger-post-editor-key";
 const HTML_CACHE_CONTROL: &str = "private, no-cache";
 const API_CACHE_CONTROL: &str = "private, no-cache";
 const STYLESHEET_CACHE_CONTROL: &str = "public, max-age=31536000, immutable";
+const FLAG_CACHE_CONTROL: &str = "public, max-age=31536000, immutable";
 const MEDIA_CACHE_CONTROL: &str = "public, max-age=604800";
 const NO_STORE_CACHE_CONTROL: &str = "no-store";
 const LOCALIZED_VARY: &str = "accept-language, cookie";
@@ -217,6 +219,7 @@ pub async fn serve(options: ServeOptions) -> Result<()> {
         .route("/api/health", get(api_health))
         .route("/health", get(api_health))
         .route("/assets/style.css", get(stylesheet))
+        .route("/assets/flags/{country_code}", get(flag_asset))
         .nest_service("/media", ServeDir::new(options.media_directory))
         .fallback(not_found_page)
         .method_not_allowed_fallback(method_not_allowed_page)
@@ -599,6 +602,20 @@ async fn stylesheet(headers: HeaderMap) -> Response {
         templates::STYLESHEET,
         "text/css; charset=utf-8",
         STYLESHEET_CACHE_CONTROL,
+        None,
+    )
+}
+
+async fn flag_asset(headers: HeaderMap, Path(country_code): Path<String>) -> Response {
+    let Some(svg) = assets::flag_svg(&country_code) else {
+        return StatusCode::NOT_FOUND.into_response();
+    };
+    cached_text_response(
+        &headers,
+        StatusCode::OK,
+        svg,
+        "image/svg+xml; charset=utf-8",
+        FLAG_CACHE_CONTROL,
         None,
     )
 }

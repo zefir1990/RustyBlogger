@@ -1,6 +1,7 @@
 use std::fmt::Write as _;
 use std::sync::OnceLock;
 
+use crate::assets::language_country_code;
 use crate::date::format_unix_date;
 use crate::model::{LanguageRecord, PostRecord};
 use crate::render::{content_hash, escape_html, render_post_body};
@@ -31,6 +32,12 @@ pub const STYLESHEET: &str = r#"
   --code-background: #0d1117;
   --code-text: #e6edf3;
   --shadow: 0 24px 70px rgba(0, 0, 0, 0.45);
+  --menu-font-size: 0.78rem;
+  --menu-line-height: 1.65;
+  --menu-padding-block: 0.34rem;
+  --menu-padding-inline: 0.85rem;
+  --menu-border-width: 1px;
+  --menu-control-height: calc(var(--menu-font-size) * var(--menu-line-height) + var(--menu-padding-block) * 2 + var(--menu-border-width) * 2);
 }
 * { box-sizing: border-box; }
 html { font-size: 17px; scroll-behavior: smooth; max-width: 100%; overflow-x: clip; }
@@ -96,10 +103,11 @@ a:hover { color: var(--accent-secondary); }
 }
 .category-nav { display: flex; flex-wrap: wrap; gap: 0.4rem; }
 .category-button {
-  border: 1px solid var(--border);
+  border: var(--menu-border-width) solid var(--border);
   border-radius: 999px;
-  padding: 0.34rem 0.85rem;
-  font-size: 0.78rem;
+  padding: var(--menu-padding-block) var(--menu-padding-inline);
+  font-size: var(--menu-font-size);
+  line-height: var(--menu-line-height);
   font-weight: 550;
   text-decoration: none;
   color: var(--muted);
@@ -122,9 +130,9 @@ a:hover { color: var(--accent-secondary); }
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 2.5rem;
-  height: 2.5rem;
-  border: 1px solid var(--border);
+  width: var(--menu-control-height);
+  height: var(--menu-control-height);
+  border: var(--menu-border-width) solid var(--border);
   border-radius: 999px;
   font-size: 1.15rem;
   line-height: 1;
@@ -166,6 +174,16 @@ a:hover { color: var(--accent-secondary); }
   border-color: rgba(125, 211, 252, 0.45);
   background: linear-gradient(135deg, rgba(125, 211, 252, 0.18), rgba(167, 139, 250, 0.18));
 }
+.language-flag {
+  display: inline-flex;
+  width: 1.33em;
+  height: 1em;
+  flex: none;
+  overflow: hidden;
+  border-radius: 3px;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.16);
+}
+.language-flag img { display: block; width: 100%; height: 100%; object-fit: cover; }
 .language-options .language-flag { font-size: 1.4rem; line-height: 1; }
 .language-options .language-name { font-weight: 600; }
 main {
@@ -225,6 +243,8 @@ h2 {
   font-size: clamp(1.55rem, 3vw, 2.75rem);
   line-height: 1.06;
   letter-spacing: -0.045em;
+  padding-block: 0.18em;
+  margin-block: -0.18em;
   background: linear-gradient(92deg, #f8fafc 0%, #c7d2fe 52%, #f0abfc 100%);
   -webkit-background-clip: text;
   background-clip: text;
@@ -287,7 +307,9 @@ time { font-variant-numeric: tabular-nums; }
   box-shadow: 0 1px 0 rgba(255, 255, 255, 0.04) inset;
 }
 .post h1 {
-  margin-top: 0;
+  margin-top: -0.18em;
+  margin-bottom: calc(1.2rem - 0.18em);
+  padding-block: 0.18em;
   overflow-wrap: anywhere;
   background: linear-gradient(92deg, #f8fafc, #c7d2fe 55%, #f0abfc);
   -webkit-background-clip: text;
@@ -520,9 +542,13 @@ footer a:hover { color: var(--accent); }
 .gdpr-warning[hidden] { display: none; }
 @media (max-width: 640px) {
   html { font-size: 16px; }
+  :root {
+    --menu-font-size: 0.72rem;
+    --menu-padding-block: 0.28rem;
+    --menu-padding-inline: 0.65rem;
+  }
   .site-header { padding: 0.85rem 1rem; }
-  .language-toggle { width: 2.2rem; height: 2.2rem; font-size: 1rem; }
-  .category-button { padding: 0.28rem 0.65rem; font-size: 0.72rem; }
+  .language-toggle { font-size: 1rem; }
   main { padding-left: 0.6rem; padding-right: 0.6rem; }
   .post-card, .post { padding: 1.15rem; border-radius: 18px; }
   .post-card .card-title { font-size: clamp(1.4rem, 7vw, 2rem); }
@@ -1076,14 +1102,15 @@ pub fn render_languages(page: &LanguagesPage) -> String {
             urlencoding::encode(&language.code),
             urlencoding::encode(&page.next_path)
         );
+        let flag_url = format!("/assets/flags/{}", language_country_code(&language.code));
         let _ = write!(
             content,
-            "<li><a href=\"{}\"{}{} hreflang=\"{}\" target=\"_self\"><span class=\"language-flag\" aria-hidden=\"true\">{}</span><span class=\"language-name\">{}</span></a></li>",
+            "<li><a href=\"{}\"{}{} hreflang=\"{}\" target=\"_self\"><span class=\"language-flag\" aria-hidden=\"true\"><img src=\"{}\" alt=\"\" width=\"24\" height=\"18\"/></span><span class=\"language-name\">{}</span></a></li>",
             escape_html(&href),
             class_attribute,
             current_attribute,
             escape_html(&language.code),
-            language_flag(&language.code),
+            escape_html(&flag_url),
             escape_html(&language_label(&language.code))
         );
     }
@@ -1306,9 +1333,10 @@ fn render_layout(
     }
     let mut html = String::new();
     let stylesheet_version = stylesheet_version();
+    let selected_flag_url = format!("/assets/flags/{}", language_country_code(selected_language));
     let _ = write!(
         html,
-        "<!doctype html><html lang=\"{}\"><head><meta charset=\"utf-8\"/><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"/><base target=\"_blank\"/>{head}<link rel=\"stylesheet\" href=\"/assets/style.css?v={stylesheet_version}\"/></head><body><header class=\"site-header\"><a class=\"site-title\" href=\"/\" target=\"_self\">{}</a><div class=\"site-actions\"><nav class=\"category-nav\" aria-label=\"{}\">{category_buttons}</nav><nav class=\"language-switcher\" aria-label=\"{}\"><a class=\"language-toggle\" href=\"/languages?next={}\" hreflang=\"{}\" title=\"{}\" aria-label=\"{}\" target=\"_self\">{}</a></nav></div></header>",
+        "<!doctype html><html lang=\"{}\"><head><meta charset=\"utf-8\"/><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"/><base target=\"_blank\"/>{head}<link rel=\"stylesheet\" href=\"/assets/style.css?v={stylesheet_version}\"/></head><body><header class=\"site-header\"><a class=\"site-title\" href=\"/\" target=\"_self\">{}</a><div class=\"site-actions\"><nav class=\"category-nav\" aria-label=\"{}\">{category_buttons}</nav><nav class=\"language-switcher\" aria-label=\"{}\"><a class=\"language-toggle\" href=\"/languages?next={}\" hreflang=\"{}\" title=\"{}\" aria-label=\"{}\" target=\"_self\"><span class=\"language-flag\" aria-hidden=\"true\"><img src=\"{}\" alt=\"\" width=\"24\" height=\"18\"/></span></a></nav></div></header>",
         escape_html(selected_language),
         escape_html(site_title),
         escape_html(categories_label(selected_language)),
@@ -1317,7 +1345,7 @@ fn render_layout(
         escape_html(selected_language),
         escape_html(choose_language_label(selected_language)),
         escape_html(choose_language_label(selected_language)),
-        language_flag(selected_language)
+        escape_html(&selected_flag_url)
     );
     let powered_by = footer_powered_by_label(selected_language)
         .replace(
@@ -1968,27 +1996,5 @@ fn categories_label(language: &str) -> &'static str {
         "pt" => "Categorias",
         "hi" => "श्रेणियाँ",
         _ => "Categories",
-    }
-}
-
-fn language_flag(language: &str) -> &'static str {
-    match language {
-        "ru" => "🇷🇺",
-        "en" => "🇬🇧",
-        "zh" => "🇨🇳",
-        "de" => "🇩🇪",
-        "ja" => "🇯🇵",
-        "fr" => "🇫🇷",
-        "es" => "🇪🇸",
-        "pt" => "🇵🇹",
-        "hi" => "🇮🇳",
-        "uk" => "🇺🇦",
-        "it" => "🇮🇹",
-        "ko" => "🇰🇷",
-        "ar" => "🇸🇦",
-        "tr" => "🇹🇷",
-        "pl" => "🇵🇱",
-        "nl" => "🇳🇱",
-        _ => "🏳️",
     }
 }
